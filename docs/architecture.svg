@@ -1,89 +1,153 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 860" font-family="Segoe UI, Roboto, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="Segoe UI, Roboto, Arial, sans-serif">
   <defs>
     <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#46524c"/></marker>
     <style>
-      .t{font-size:15px;fill:#1b1d1a}.s{font-size:12.5px;fill:#4a5149}.h{font-size:13px;font-weight:700;letter-spacing:.08em;fill:#1f6f63}
-      .cv{fill:#e6f2ef;stroke:#1f6f63;stroke-width:1.5}.aws{fill:#fff4e5;stroke:#d9821e;stroke-width:1.5}.ag{fill:#efeefb;stroke:#5458c2;stroke-width:1.5}
+      .t{font-size:14.5px;fill:#1b1d1a;font-weight:700}.s{font-size:12px;fill:#4a5149}.h{font-size:12.5px;font-weight:700;letter-spacing:.08em}
+      .eng{fill:#e8eefb;stroke:#2f5fb3;stroke-width:1.5}.cv{fill:#e6f2ef;stroke:#1f6f63;stroke-width:1.5}.vw{fill:#fdf1f4;stroke:#b0436a;stroke-width:1.5}
+      .aws{fill:#fff4e5;stroke:#d9821e;stroke-width:1.5}.ag{fill:#efeefb;stroke:#5458c2;stroke-width:1.5}
       .pl{fill:#f4f5f2;stroke:#bfc3b8;stroke-width:1.2}.l{stroke:#46524c;stroke-width:1.6;fill:none}
     </style>
   </defs>
-  <rect width="1400" height="860" fill="#ffffff"/>
+  <rect width="1400" height="900" fill="#ffffff"/>
   <text x="40" y="44" font-size="24" font-weight="700" fill="#1b1d1a">Spatially Aware Property Inspection: architecture</text>
-  <text x="40" y="68" class="s">Teal: OpenCV 5 analysis · Orange: AWS services · Purple: agent (perception → decision → action) · Grey: people and devices</text>
+  <text x="40" y="68" class="s">Blue: hybrid visual SLAM + 3D reconstruction (Depth Anything 3 + OpenCV 5) · Teal: OpenCV 5 analysis · Pink: viewer and report · Purple: agent · Orange: AWS</text>
 
-  <!-- AWS cloud boundary -->
-  <rect x="250" y="95" width="1120" height="735" rx="16" fill="none" stroke="#d9821e" stroke-width="2" stroke-dasharray="7 5"/>
-  <text x="270" y="122" class="h" fill="#d9821e">AWS CLOUD (ap-southeast-1)</text>
+  <!-- AWS boundary -->
+  <rect x="250" y="92" width="1125" height="790" rx="16" fill="none" stroke="#d9821e" stroke-width="2" stroke-dasharray="7 5"/>
+  <text x="270" y="118" class="h" fill="#d9821e">AWS CLOUD (TARGET DEPLOYMENT; RUNS THE SAME ON A LOCAL NVIDIA WORKSTATION)</text>
 
   <!-- people -->
-  <rect x="30" y="160" width="190" height="110" rx="12" class="pl"/>
-  <text x="45" y="188" class="t" font-weight="700">Person filming</text>
-  <text x="45" y="210" class="s">Phone walkthrough video,</text><text x="45" y="227" class="s">or the Coverage Capture app</text><text x="45" y="244" class="s">(re-film instructions back)</text>
-  <rect x="30" y="560" width="190" height="110" rx="12" class="pl"/>
-  <text x="45" y="588" class="t" font-weight="700">Inspector</text>
-  <text x="45" y="610" class="s">Reviews evidence and the</text><text x="45" y="627" class="s">agent trace; approves or</text><text x="45" y="644" class="s">overrides the decision</text>
+  <rect x="30" y="170" width="195" height="104" rx="12" class="pl"/>
+  <text x="45" y="197" class="t">Person filming</text>
+  <text x="45" y="219" class="s">Phone walkthrough video</text>
+  <text x="45" y="237" class="s">of a room; gets re-film</text>
+  <text x="45" y="255" class="s">instructions back</text>
+  <rect x="30" y="620" width="195" height="122" rx="12" class="pl"/>
+  <text x="45" y="647" class="t">Inspector</text>
+  <text x="45" y="669" class="s">Walks the 3D model, reviews</text>
+  <text x="45" y="687" class="s">each finding, reads the agent</text>
+  <text x="45" y="705" class="s">trace, approves or overrides</text>
+  <text x="45" y="723" class="s">the decision</text>
 
   <!-- EC2 -->
-  <rect x="280" y="140" width="760" height="560" rx="14" class="aws"/>
-  <text x="300" y="168" class="h" fill="#b36612">AMAZON EC2 · GRAVITON (ARM64) · FastAPI web endpoint</text>
+  <rect x="268" y="132" width="1090" height="440" rx="14" fill="none" stroke="#d9821e" stroke-width="1.5"/>
+  <text x="285" y="155" class="h" fill="#d9821e">AMAZON EC2 · GPU INSTANCE (NVIDIA) · FastAPI web endpoint, one walkthrough at a time</text>
 
-  <!-- pipeline boxes -->
-  <g>
-    <rect x="300" y="185" width="230" height="78" rx="10" class="cv"/><text x="314" y="208" class="t" font-weight="700">1 · Video and quality</text>
-    <text x="314" y="228" class="s">VideoCapture, Laplacian sharpness,</text><text x="314" y="244" class="s">DIS optical flow, CLAHE</text>
-    <rect x="550" y="185" width="230" height="78" rx="10" class="cv"/><text x="564" y="208" class="t" font-weight="700">2 · Privacy</text>
-    <text x="564" y="228" class="s">FaceDetectorYN (YuNet), DB text</text><text x="564" y="244" class="s">detection → blur before analysis</text>
-    <rect x="800" y="185" width="225" height="78" rx="10" class="cv"/><text x="814" y="208" class="t" font-weight="700">3 · Camera tracking</text>
-    <text x="814" y="228" class="s">LK flow, MAGSAC essential matrix,</text><text x="814" y="244" class="s">recoverPose, triangulate, PnP</text>
+  <!-- row A: engine -->
+  <text x="285" y="182" class="h" fill="#2f5fb3">3D ENGINE · engine3d/ · HYBRID VISUAL SLAM + 3D RECONSTRUCTION</text>
+  <rect x="285" y="192" width="205" height="98" rx="10" class="eng"/>
+  <text x="297" y="214" class="t">1 · Depth Anything 3</text>
+  <text x="297" y="234" class="s">DA3-BASE on the GPU: depth,</text>
+  <text x="297" y="250" class="s">pose, intrinsics per frame;</text>
+  <text x="297" y="266" class="s">chunks stitched by Sim(3)</text>
+  <rect x="500" y="192" width="205" height="98" rx="10" class="eng"/>
+  <text x="512" y="214" class="t">2 · OpenCV 5 tracking</text>
+  <text x="512" y="234" class="s">LK optical flow, SIFT / ORB,</text>
+  <text x="512" y="250" class="s">MAGSAC essential matrix,</text>
+  <text x="512" y="266" class="s">recoverPose per frame pair</text>
+  <rect x="715" y="192" width="205" height="98" rx="10" class="eng"/>
+  <text x="727" y="214" class="t">3 · Pose refinement</text>
+  <text x="727" y="234" class="s">verified pairs correct the</text>
+  <text x="727" y="250" class="s">trajectory; triangulated</text>
+  <text x="727" y="266" class="s">landmarks, loop candidates</text>
+  <rect x="930" y="192" width="205" height="98" rx="10" class="eng"/>
+  <text x="942" y="214" class="t">4 · Dense fusion</text>
+  <text x="942" y="234" class="s">depth filtering, joint-bilateral</text>
+  <text x="942" y="250" class="s">upsampling, point-to-plane ICP,</text>
+  <text x="942" y="266" class="s">1.5 cm TSDF, free-space carving</text>
+  <rect x="1145" y="192" width="200" height="98" rx="10" class="eng"/>
+  <text x="1157" y="214" class="t">5 · Clean room</text>
+  <text x="1157" y="234" class="s">floor RANSAC, Manhattan</text>
+  <text x="1157" y="250" class="s">planes, textured walls; objects</text>
+  <text x="1157" y="266" class="s">named by Grounding DINO</text>
+  <path class="l" d="M490 241H500M705 241H715M920 241H930M1135 241H1145" marker-end="url(#a)"/>
 
-    <rect x="300" y="285" width="230" height="78" rx="10" class="cv"/><text x="314" y="308" class="t" font-weight="700">4 · Depth</text>
-    <text x="314" y="328" class="s">cv2.dnn: Depth Anything V2 Small</text><text x="314" y="344" class="s">(ONNX, CPU), scaled by tracking</text>
-    <rect x="550" y="285" width="230" height="78" rx="10" class="cv"/><text x="564" y="308" class="t" font-weight="700">5 · 3D fusion</text>
-    <text x="564" y="328" class="s">cv2.Volume hash TSDF,</text><text x="564" y="344" class="s">fetchPointsNormals, savePointCloud</text>
-    <rect x="800" y="285" width="225" height="78" rx="10" class="cv"/><text x="814" y="308" class="t" font-weight="700">6 · Room layout</text>
-    <text x="814" y="328" class="s">Manhattan walls, floor, ceiling</text><text x="814" y="344" class="s">from fused points and normals</text>
+  <!-- row B: analysis -->
+  <text x="285" y="318" class="h" fill="#1f6f63">OPENCV 5 ANALYSIS · on the engine's cameras, depth and room planes</text>
+  <rect x="285" y="328" width="205" height="98" rx="10" class="cv"/>
+  <text x="297" y="350" class="t">6 · Quality + privacy</text>
+  <text x="297" y="370" class="s">Laplacian, CLAHE; YuNet faces</text>
+  <text x="297" y="386" class="s">and DB text blurred before</text>
+  <text x="297" y="402" class="s">anything is analysed</text>
+  <rect x="500" y="328" width="205" height="98" rx="10" class="cv"/>
+  <text x="512" y="350" class="t">7 · Evidence integrity</text>
+  <text x="512" y="370" class="s">img_hash PHash reuse, hard</text>
+  <text x="512" y="386" class="s">cuts, frozen / looped frames,</text>
+  <text x="512" y="402" class="s">dft moiré + bezel: screen</text>
+  <rect x="715" y="328" width="205" height="98" rx="10" class="cv"/>
+  <text x="727" y="350" class="t">8 · Coverage</text>
+  <text x="727" y="370" class="s">10 cm samples vs every frame,</text>
+  <text x="727" y="386" class="s">occlusion, 3 m / 70° / sharp;</text>
+  <text x="727" y="402" class="s">keyframes by set cover</text>
+  <rect x="930" y="328" width="205" height="98" rx="10" class="cv"/>
+  <text x="942" y="350" class="t">9 · Defects</text>
+  <text x="942" y="370" class="s">ridge filter, thinning, Lab</text>
+  <text x="942" y="386" class="s">colour, morphology, contours;</text>
+  <text x="942" y="402" class="s">size in metres from depth</text>
+  <rect x="1145" y="328" width="200" height="98" rx="10" class="cv"/>
+  <text x="1157" y="350" class="t">10 · Defect or object?</text>
+  <text x="1157" y="370" class="s">ray cast onto room planes vs</text>
+  <text x="1157" y="386" class="s">depth; Grounding DINO boxes;</text>
+  <text x="1157" y="402" class="s">MobileNetV2 via cv2.dnn</text>
+  <path class="l" d="M490 377H500M705 377H715M920 377H930M1135 377H1145" marker-end="url(#a)"/>
+  <path class="l" d="M1245 290V300H387V328" marker-end="url(#a)"/>
 
-    <rect x="300" y="385" width="230" height="78" rx="10" class="cv"/><text x="314" y="408" class="t" font-weight="700">7 · Coverage</text>
-    <text x="314" y="428" class="s">10 cm samples, projectPoints,</text><text x="314" y="444" class="s">depth occlusion, 3 m / 70° rule</text>
-    <rect x="550" y="385" width="230" height="78" rx="10" class="cv"/><text x="564" y="408" class="t" font-weight="700">8 · Defect evidence</text>
-    <text x="564" y="428" class="s">ridge filter, thinning, Lab colour,</text><text x="564" y="444" class="s">morphology, contours, size in m</text>
-    <rect x="800" y="385" width="225" height="78" rx="10" class="cv"/><text x="814" y="408" class="t" font-weight="700">9 · Walls and labels</text>
-    <text x="814" y="428" class="s">homography warps onto wall planes,</text><text x="814" y="444" class="s">text recognition (CRNN) on plates</text>
-  </g>
-  <path class="l" marker-end="url(#a)" d="M530 224h20M780 224h20M912 263v10H415v12M530 324h20M780 324h20M912 363v10H415v12M530 424h20M780 424h20"/>
+  <!-- row C: viewer -->
+  <text x="285" y="454" class="h" fill="#b0436a">VIEWER AND REPORT · walkthrough.py + web/</text>
+  <rect x="285" y="464" width="260" height="92" rx="10" class="vw"/>
+  <text x="297" y="486" class="t">11 · 3D walkthrough viewer</text>
+  <text x="297" y="506" class="s">textured room GLB, numbered finding</text>
+  <text x="297" y="522" class="s">pins, walk inside along the camera</text>
+  <text x="297" y="538" class="s">path, coverage-gap patches</text>
+  <rect x="555" y="464" width="255" height="92" rx="10" class="vw"/>
+  <text x="567" y="486" class="t">12 · Live map + coach</text>
+  <text x="567" y="506" class="s">video beside the 2D map as coverage</text>
+  <text x="567" y="522" class="s">grows; floor plan; where to film</text>
+  <text x="567" y="538" class="s">next to reach the target</text>
+  <rect x="820" y="464" width="255" height="92" rx="10" class="vw"/>
+  <text x="832" y="486" class="t">13 · Grade, risk, decision</text>
+  <text x="832" y="506" class="s">rules: grade A–E, perils, repair</text>
+  <text x="832" y="522" class="s">cost, valuation, underwriting;</text>
+  <text x="832" y="538" class="s">REFER below 60% inspected</text>
+  <rect x="1085" y="464" width="260" height="92" rx="10" class="vw"/>
+  <text x="1097" y="486" class="t">14 · Dashboard + report</text>
+  <text x="1097" y="506" class="s">all inspections, review buttons,</text>
+  <text x="1097" y="522" class="s">human approval; HTML (PDF),</text>
+  <text x="1097" y="538" class="s">Markdown and JSON export</text>
 
   <!-- agent -->
-  <rect x="300" y="500" width="725" height="180" rx="12" class="ag"/>
-  <text x="318" y="526" class="h" fill="#5458c2">INSPECTION AGENT · perception → decision → action</text>
-  <text x="318" y="552" class="s">Tools (each runs OpenCV 5 on the walkthrough): coverage_report · list_candidates · look_at (CLAHE, denoise)</text>
-  <text x="318" y="572" class="s">find_better_view (projects the 3D finding into every frame, picks the closest square-on sharp view, re-detects)</text>
-  <text x="318" y="592" class="s">measure (depth + intrinsics → metres) · read_label (DB + CRNN) · confirm / dismiss · request_refilm · request_human_approval</text>
-  <text x="318" y="620" class="t">What OpenCV measures changes the next step: low coverage → REFER + re-film instructions;</text>
-  <text x="318" y="640" class="t">unclear crop → another view; re-detection score → confirm or dismiss; every decision waits for a person.</text>
-  <text x="318" y="664" class="s">Rule-based policy runs the same tools when Bedrock is unreachable, so the loop never stalls.</text>
-  <path class="l" marker-end="url(#a)" d="M662 463v37"/>
+  <rect x="268" y="598" width="800" height="186" rx="14" class="ag"/>
+  <text x="285" y="622" class="h" fill="#5458c2">INSPECTION AGENT · perception → decision → action</text>
+  <text x="285" y="648" class="s">Tools (each runs OpenCV 5 on the walkthrough): coverage_report · check_integrity · list_candidates · look_at</text>
+  <text x="285" y="666" class="s">find_better_view (projects the 3D finding into every frame, picks the closest square-on sharp view, re-detects)</text>
+  <text x="285" y="684" class="s">measure · read_label · flag_for_review / dismiss · request_refilm · assess_risk · request_human_approval</text>
+  <text x="285" y="712" class="s">What OpenCV measures changes the next step: low coverage → REFER + re-film instructions; unclear crop → another</text>
+  <text x="285" y="730" class="s">view; re-detection and Grounding DINO → flag or dismiss; nothing is confirmed without a person.</text>
+  <text x="285" y="758" class="s">A rule-based policy runs the same tools when Bedrock is unreachable, so the loop never stalls.</text>
 
   <!-- AWS services -->
-  <rect x="1090" y="160" width="250" height="110" rx="12" class="aws"/>
-  <text x="1105" y="188" class="t" font-weight="700">Amazon S3</text>
-  <text x="1105" y="210" class="s">Uploaded videos, results,</text><text x="1105" y="227" class="s">3D points, rectified walls,</text><text x="1105" y="244" class="s">agent traces, code bundle</text>
-  <rect x="1090" y="520" width="250" height="130" rx="12" class="aws"/>
-  <text x="1105" y="548" class="t" font-weight="700">Amazon Bedrock</text>
-  <text x="1105" y="570" class="s">Claude via the Converse API</text><text x="1105" y="587" class="s">with tool use and images:</text><text x="1105" y="604" class="s">decides which OpenCV tool</text><text x="1105" y="621" class="s">to call next</text>
-  <rect x="1090" y="330" width="250" height="110" rx="12" class="aws"/>
-  <text x="1105" y="358" class="t" font-weight="700">IAM + Systems Manager</text>
-  <text x="1105" y="380" class="s">Instance role: S3 + Bedrock only;</text><text x="1105" y="397" class="s">no keys on the server; shell</text><text x="1105" y="414" class="s">access without open SSH</text>
+  <rect x="1088" y="598" width="270" height="78" rx="12" class="aws"/>
+  <text x="1100" y="622" class="t">Amazon Bedrock</text>
+  <text x="1100" y="642" class="s">Claude, Converse API with tool</text>
+  <text x="1100" y="658" class="s">use: picks the next OpenCV tool</text>
+  <rect x="1088" y="690" width="270" height="78" rx="12" class="aws"/>
+  <text x="1100" y="714" class="t">Amazon S3</text>
+  <text x="1100" y="734" class="s">videos, 3D models, results,</text>
+  <text x="1100" y="750" class="s">agent traces, code bundle</text>
+  <rect x="1088" y="782" width="270" height="80" rx="12" class="aws"/>
+  <text x="1100" y="806" class="t">IAM + Systems Manager</text>
+  <text x="1100" y="826" class="s">instance role: S3 + Bedrock only;</text>
+  <text x="1100" y="842" class="s">no keys on the server, no SSH</text>
+  <path class="l" d="M1068 637H1088" marker-end="url(#a)" marker-start="url(#a)"/>
+  <path class="l" d="M680 572V598" marker-end="url(#a)"/>
+  <path class="l" d="M1215 572V598" marker-end="url(#a)"/>
 
-  <path class="l" marker-end="url(#a)" d="M220 215h80"/>
-  <path class="l" marker-end="url(#a)" d="M1040 215h50"/>
-  <path class="l" marker-end="url(#a)" marker-start="url(#a)" d="M1025 585h65"/>
-  <path class="l" marker-end="url(#a)" marker-start="url(#a)" d="M300 615H220"/>
-  <path class="l" marker-end="url(#a)" d="M300 650c-120 0-150-300-150-380"/>
-  <text x="96" y="420" class="s" transform="rotate(-90 96 420)">re-film instructions</text>
-
-  <rect x="280" y="725" width="1060" height="85" rx="12" class="pl"/>
-  <text x="300" y="752" class="t" font-weight="700">Web endpoint (same EC2 instance)</text>
-  <text x="300" y="774" class="s">Upload a video · watch processing · 3D point cloud (three.js) · rectified walls and floor plan · findings with crops · coverage and gaps ·</text>
-  <text x="300" y="792" class="s">step-by-step agent trace with the images it looked at · approve or override the decision (recorded in the trace)</text>
-  <path class="l" marker-end="url(#a)" d="M662 700v25"/>
+  <!-- people arrows -->
+  <path class="l" d="M225 222H268" marker-end="url(#a)"/>
+  <text x="229" y="212" class="s">video</text>
+  <path class="l" d="M268 700H225" marker-end="url(#a)"/>
+  <path class="l" d="M225 742C250 742 250 810 268 810H560V784" marker-end="url(#a)"/>
+  <text x="290" y="826" class="s">approve / override, confirm / dismiss findings</text>
+  <path class="l" d="M268 660C240 660 240 300 225 290" marker-end="url(#a)"/>
+  <text x="128" y="460" class="s" transform="rotate(-90 128 460)">re-film instructions</text>
 </svg>
