@@ -408,6 +408,11 @@ button.wcard:hover:not(:disabled) { background: var(--surface); }
 :root[data-theme="dark"] .steps li.done::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .steps li.done::before { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E"); } }
 .steps li.done::after { background: var(--text); }
+/* the long pipeline list: tighter rows, with a heading per part (3D engine, OpenCV analysis, agent and viewer) */
+.steps.fine li { padding-bottom: 11px; }
+.steps.fine li.grp { padding: 10px 0 8px; font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-2); }
+.steps.fine li.grp:first-child { padding-top: 0; }
+.steps li.grp::before, .steps li.grp::after { display: none; }
 /* The scanning view: the product's one orchestrated motion. A beam sweeps the video; the measurement grid
    lights up only around the beam (like LiDAR revealing geometry); points ping as they are "measured".
    --scan (registered, so it animates) drives the beam position and the grid mask together. */

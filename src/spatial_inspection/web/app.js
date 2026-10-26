@@ -169,7 +169,8 @@ function showUploadForm() {
 // The progress card sits on the walkthroughs page while a walkthrough is followed.
 function placeRunning() {
   const run = $("running");
-  const slot = watching && currentView === "walkthroughs" ? "walk-run-slot" : null;
+  const slot = !watching ? null : currentView === "walkthroughs" ? "walk-run-slot"
+    : currentView === "dashboard" ? "dash-run-slot" : null;
   $("nav-walk-live").hidden = !watching;
   if (!slot) { run.hidden = true; panelOwner = null; return; }
   if (panelOwner !== "walk") paintOwner("walk");
@@ -230,7 +231,7 @@ function paintOwner(kind) {
   v.onerror = () => { if (panelOwner === "walk" && runState.walk.videoUrl) { runState.walk.videoUrl = null; paintOwner("walk"); } };
   if (st.videoUrl) { if (v.getAttribute("src") !== st.videoUrl) v.src = st.videoUrl; v.hidden = false; v.play().catch(() => {}); }
   else { v.hidden = true; v.pause(); }
-  $("run-scan").hidden = !st.videoUrl;
+  $("run-scan").hidden = false;           // the scan animation runs over the video, or over the dark frame without one
   $("run-stage").textContent = st.stageText || "Starting";
   $("scan-tag").textContent = st.stageText || "Processing";
   if (st.prog) paintProgress(...st.prog); else resetProgress();
@@ -370,11 +371,38 @@ function renderPortfolio() {
 
 // ---- Walkthroughs ----------------------------------------------------------------------------------
 let watching = null, walkItems = null;
-const WALK_STEPS = ["upload", "slam", "coverage", "ai", "render"];
+// Every step the server reports (status.json: progress.key = engine / analysis / agent / viewer, progress.phase = the
+// step's text), grouped as the pipeline runs: the 3D engine, the OpenCV analysis, then the agent and the viewer.
+const WALK_STEPS = [
+  { id: "upload", g: "Upload", t: "Uploading video", s: "To the inspection server" },
+  { id: "e1", g: "3D engine", k: "engine", t: "Depth Anything 3", s: "Depth, camera pose and intrinsics for every frame · GPU", re: /depth anything|frames \+/i },
+  { id: "e2", k: "engine", t: "Floor plane and metric scale", s: "RANSAC floor; the camera height sets metres", re: /floor plane|metric scale/i },
+  { id: "e3", k: "engine", t: "OpenCV 5 camera tracking", s: "LK optical flow, SIFT + MAGSAC pose checks, trajectory refinement", re: /tracking|sift|magsac/i },
+  { id: "e4", k: "engine", t: "Depth filtering", s: "Flying pixels removed, joint-bilateral upsampling", re: /depth filtering|bilateral/i },
+  { id: "e5", k: "engine", t: "ICP alignment and TSDF mesh", s: "Point-to-plane ICP per frame, 1.5 cm TSDF, free-space carving", re: /alignment|tsdf/i },
+  { id: "e6", k: "engine", t: "Gravity and Manhattan frame", s: "Walls, floor and ceiling made flat", re: /model frame|manhattan|regularis/i },
+  { id: "e7", k: "engine", t: "Room layout", s: "Walls, doors, openings, floor and ceiling", re: /structural layout/i },
+  { id: "e8", k: "engine", t: "Furniture, named by Grounding DINO", s: "Objects separated from the room structure", re: /objects \(|grounding/i },
+  { id: "e9", k: "engine", t: "Real-world texturing", s: "Walls, floor and ceiling textured from the video", re: /textured|shell/i },
+  { id: "e10", k: "engine", t: "Floor plan and navigation map", s: "Occupancy grid and A* path", re: /2d maps|occupancy|navigation/i },
+  { id: "e11", k: "engine", t: "3D exports and self-check", s: "GLB models, previews, reconstruction metrics", re: /exports|previews|evaluation|model ready/i },
+  { id: "a1", g: "OpenCV analysis", k: "analysis", t: "Quality gate and evidence integrity", s: "Sharpness; reused, spliced, looped or filmed-off-a-screen footage", re: /quality|integrity/i },
+  { id: "a2", k: "analysis", t: "Privacy", s: "Faces (YuNet) and private text blurred before analysis", re: /privacy|blurring/i },
+  { id: "a3", k: "analysis", t: "OpenCV TSDF and room planes", s: "cv2.Volume fusion on the engine's depth and poses", re: /fusion|fusing|layout|fitting walls/i },
+  { id: "a4", k: "analysis", t: "Surface coverage and keyframes", s: "Every 10 cm of wall, floor and ceiling against every frame", re: /coverage/i },
+  { id: "a5", k: "analysis", t: "Defect candidates", s: "OpenCV detectors; Grounding DINO and MobileNetV2 rule out objects", re: /defect|finding/i },
+  { id: "a6", k: "analysis", t: "Labels and rectified walls", s: "Rating-plate text; each wall as one image", re: /label|visual|rectif/i },
+  { id: "ag", g: "Agent and viewer", t: "Inspection agent", s: "Better views, re-film requests, risk and a proposed decision" },
+  { id: "vw", t: "3D viewer and report", s: "Finding pins, walk-inside path, live map video, GLBs" },
+];
+function paintWalkSteps() {
+  $("walk-steps").innerHTML = WALK_STEPS.map((x) => (x.g ? `<li class="grp">${esc(x.g)}</li>` : "") +
+    `<li data-step="${x.id}"><span class="st">${esc(x.t)}<small>${esc(x.s)}</small></span></li>`).join("");
+}
 const WALK_NOTE = "Depth Anything 3 + OpenCV 5 SLAM build the 3D model on the GPU, then OpenCV analyses the keyframes and the agent proposes a decision — usually several minutes. You can leave this page open; the results open automatically when finished.";
 
-// Walkthroughs uploaded from this browser: only those are re-attached automatically, so other people's
-// jobs on a shared demo server don't take over this page (their cards stay clickable).
+// Walkthroughs uploaded from this browser are followed first; otherwise the page follows whatever the GPU is
+// processing, so a job started elsewhere (another tab, the command line) still shows its live progress.
 const MY_WALKS_LS = "pi_my_walks";
 function myWalks() { try { return JSON.parse(localStorage.getItem(MY_WALKS_LS) || "[]"); } catch { return []; } }
 function rememberWalk(name) {
@@ -389,6 +417,7 @@ async function walks() {
     // Re-attach to this browser's walkthrough that is still queued or processing (page reload, second tab, ...).
     const mine = myWalks();
     const run = walkItems.find((w) => w.status === "running" && mine.includes(w.name))
+      || walkItems.find((w) => w.status === "running")
       || walkItems.find((w) => w.status === "queued" && mine.includes(w.name));
     if (run && !watching) watchWalk(run.name);
   } catch {                             // offline: don't leave stale "running" spinners in the list
@@ -457,26 +486,36 @@ function pickWalk() {
 }
 
 function setWalkStep(step) {
-  const idx = WALK_STEPS.indexOf(step);
-  document.querySelectorAll("#walk-steps li").forEach((li, i) => {
+  if (!$("walk-steps").querySelector("li[data-step]")) paintWalkSteps();
+  const idx = WALK_STEPS.findIndex((x) => x.id === step);
+  document.querySelectorAll("#walk-steps li[data-step]").forEach((li, i) => {
     li.classList.toggle("done", i < idx); li.classList.toggle("active", i === idx);
   });
-  const li = $("walk-steps").querySelector(`[data-step="${step}"] .st`);
-  setStageText("walk", li ? li.firstChild.textContent : step);
+  const cur = WALK_STEPS[idx];
+  setStageText("walk", cur ? cur.t : step);
+  // the scan overlay names the part of the pipeline that is running: "3D engine · 5 / 11"
+  let start = idx;
+  while (start > 0 && !WALK_STEPS[start].g) start--;
+  let end = start + 1;
+  while (end < WALK_STEPS.length && !WALK_STEPS[end].g) end++;
+  const hud = $("scan-hud");
+  hud.hidden = !cur;
+  hud.textContent = cur ? `${WALK_STEPS[start].g} · ${idx - start + 1} / ${end - start}` : "";
 }
 
 // The current pipeline step from status.json (progress.key = engine / analysis / agent / viewer, progress.phase = the
 // stage text), else from the log lines.
 function walkStep(p, lines) {
   const k = (p && p.key) || "", ph = (p && p.phase) || "";
-  if (/^(agent|viewer|done)$/.test(k)) return "render";
-  if (k === "analysis") return /defect|finding|label|rectif|agent/i.test(ph) ? "ai" : "coverage";
-  if (/^(engine|frames|tracking|levelling)$/.test(k)) return "slam";
-  const txt = lines.join("\n");
-  if (/viewer:|agent:|live map|GLB|finding pins/i.test(txt)) return "render";
-  if (/defects|Finding and placing|Reading labels|Rectifying/i.test(txt)) return "ai";
-  if (/analysis:|coverage|TSDF volume|Fitting walls/i.test(txt)) return "coverage";
-  return "slam";
+  if (k === "viewer" || k === "done") return "vw";
+  if (k === "agent" || (k === "analysis" && /agent/i.test(ph))) return "ag";
+  const pool = WALK_STEPS.filter((x) => x.k === (k === "analysis" ? "analysis" : "engine"));
+  const hit = pool.find((x) => x.re.test(ph));
+  if (hit) return hit.id;
+  if (k === "analysis") return "a1";
+  const txt = lines.join("\n");                     // no status yet: read the log
+  const seen = WALK_STEPS.filter((x) => x.k === "engine" && x.re.test(txt));
+  return seen.length ? seen[seen.length - 1].id : "e1";
 }
 
 const cleanLine = (l) => l.replace(/\u001b\[[0-9;]*m/g, "").trim();
@@ -504,7 +543,7 @@ function watchWalk(name, videoUrl) {
   watching = name;
   // No local copy of the video (page reloaded, other tab, started elsewhere): play the stored upload.
   startWalkPanel(name, videoUrl || withKey(`${API}/walkthrough/${encodeURIComponent(name)}/video`));
-  setWalkStep("slam");
+  setWalkStep("e1");
   const view = `/walkthroughs/${name}/`;
   let misses = 0, fails = 0;
   const tick = async () => {
@@ -530,7 +569,7 @@ function watchWalk(name, videoUrl) {
     $("walk-status").innerHTML = `<span class="mini-spin"></span>${esc(name)}: ${esc(l.status)}`;
     if (l.status === "queued") {                  // another walkthrough has the GPU: say so instead of a silent wait
       const msg = queueText(l.queue || {});
-      setWalkStep("slam"); setStageText("walk", "Waiting for the GPU");
+      setWalkStep("e1"); setStageText("walk", "Waiting for the GPU");
       $("walk-status").innerHTML = `<span class="mini-spin"></span>${esc(name)}: ${esc(msg)}`;
       const waited = (l.queue && l.queue.waiting_s) || 0;
       runState.walk.t0 = Date.now() - waited * 1000;

@@ -42,6 +42,7 @@ from pydantic import BaseModel
 RESULTS = Path(os.environ.get("RESULTS_DIR", "results")).resolve()
 UPLOADS = Path(os.environ.get("UPLOADS_DIR", "uploads")).resolve()
 WEB = Path(__file__).parent / "web"
+ROOT_DIR = Path(__file__).resolve().parents[2]      # the repository (sample videos under data/)
 RESULTS.mkdir(parents=True, exist_ok=True)
 UPLOADS.mkdir(parents=True, exist_ok=True)
 _lock = threading.Lock()
@@ -532,11 +533,17 @@ def walkthrough_log(name: str):
 @app.get("/api/v1/walkthrough/{name}/video")
 def walkthrough_video(name: str):
     """The stored upload, so the progress view can play it when the browser has no local copy of the video."""
-    st = _read_json(_dir(name) / "status.json") or {}
-    p = (UPLOADS / st["video"]).resolve() if st.get("video") else None
-    if p is None or not p.is_relative_to(UPLOADS) or not p.is_file():
-        raise HTTPException(404, "no stored video")
-    return FileResponse(p)
+    d = _dir(name)
+    st = _read_json(d / "status.json") or {}
+    # an upload, or for a run started from the command line its video under the repository's data/ folder
+    allowed = [(UPLOADS, st.get("video")), (ROOT_DIR / "data", st.get("video_path"))]
+    for base, rel in allowed:
+        p = (base / rel).resolve() if rel else None
+        if p is not None and p.is_relative_to(base.resolve()) and p.is_file():
+            return FileResponse(p)
+    if (d / "source_video.mp4").is_file():
+        return FileResponse(d / "source_video.mp4")
+    raise HTTPException(404, "no stored video")
 
 
 @app.post("/api/v1/walkthrough/{name}/retry")

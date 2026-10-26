@@ -91,6 +91,7 @@
         </div>
       </div>
       <div id="pf-err" class="error" hidden></div>
+      <div id="dash-run-slot"></div>
       <div class="kpis big" id="pf-kpis"></div>
       <div>
         <div class="card-head"><h2>Recent walkthroughs</h2><a href="#/walkthroughs" class="small">All walkthroughs</a></div>
@@ -173,13 +174,7 @@
         </div>
         <div>
           <h3 class="sec-h" style="margin-top:0">Pipeline</h3>
-          <ol id="walk-steps" class="steps">
-            <li data-step="upload"><span class="st">Uploading video<small>To the inspection server</small></span></li>
-            <li data-step="slam"><span class="st">3D engine<small>Depth Anything 3 + OpenCV 5 SLAM (longest step)</small></span></li>
-            <li data-step="coverage"><span class="st">Coverage &amp; floor plan<small>What was seen at inspection quality</small></span></li>
-            <li data-step="ai"><span class="st">Defect analysis of keyframes<small>OpenCV 5, placed on the 3D room model</small></span></li>
-            <li data-step="render"><span class="st">Agent, 3D models &amp; risk report<small>Findings pinned in 3D, live map video, proposal to approve</small></span></li>
-          </ol>
+          <ol id="walk-steps" class="steps fine"></ol>
           <p class="run-note" id="run-note"></p>
         </div>
       </div>
