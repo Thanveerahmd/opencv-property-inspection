@@ -100,23 +100,146 @@ images it looked at. When Bedrock is not reachable the same tools run under a ru
 
 | Service | Use |
 | --- | --- |
-| Amazon EC2 (Graviton, arm64) | The FastAPI web endpoint and the whole OpenCV 5 pipeline (CPU only) |
+| Amazon EC2 | The FastAPI web endpoint and the pipeline. The 3D engine (Depth Anything 3, Grounding DINO) needs an NVIDIA instance (G5 / G6 family); the OpenCV-only path runs on Graviton (arm64, CPU) |
 | Amazon S3 | Uploaded videos, results, rectified walls, 3D points, agent traces, the code bundle |
 | Amazon Bedrock | The agent's model (Claude, Converse API with tool use and images) |
 | AWS IAM + Systems Manager | Instance role limited to the bucket and Bedrock; shell access without SSH keys |
 
 `deploy/aws/deploy.sh` creates the bucket, role, security group and instance; `deploy/aws/bootstrap.sh` installs
-the pinned dependencies, downloads the models from their sources with SHA-256 checks, and starts the service.
+the pinned dependencies, downloads the models from their sources with SHA-256 checks, and starts the service. Its
+default instance (`INSTANCE_TYPE=c7g.2xlarge`) serves the OpenCV-only path; the GPU engine needs a GPU instance type
+and the CUDA build of PyTorch.
 
 ## 7. Evaluation
 
-_To be completed with the measured results: coverage against the inspection platform's GPU engine on the same
-videos, trajectory error of the OpenCV-only path, defect-candidate precision on labelled sample images, runtime per
-stage on the Graviton instance, and agent task success over the sample walkthroughs, with failure cases._
+### 7.1 Setup
+
+Two phone walkthroughs of furnished homes in Sri Lanka, filmed handheld at 848×480, 30 fps:
+`demo_property_lite` (19.6 s, two rooms) and `tom_home` (21.1 s, one open-plan living room with a staircase).
+The engine samples 10 frames per second: 197 and 212 frames. Everything ran on one laptop (NVIDIA RTX 3080 Laptop
+GPU, 16 GB) with every thread pool capped at 2 threads, below-normal priority and one job at a time.
+
+There is no LiDAR scan or tape survey of these rooms and neither room has visible damage, so this section reports
+(a) the engine's own consistency checks, (b) agreement with the Property Inspection Platform's engine and with our
+CPU-only OpenCV path, (c) what happened to every defect candidate, checked by hand, (d) the integrity checks on honest
+and doctored footage, and (e) runtime. Defect recall cannot be measured on these videos (section 8).
+
+### 7.2 Hybrid SLAM and reconstruction
+
+| Measure | demo_property_lite | tom_home |
+| --- | --- | --- |
+| Frames used / keyframes | 197 / 73 | 212 / 77 |
+| Depth Anything 3 | reused from an earlier run of the same video | 3 chunks of 100 frames, 19.7 s on the GPU |
+| OpenCV pair checks (pass / warn / fail / too few features) | 115 / 20 / 5 / 56 | 144 / 1 / 5 / 61 |
+| DA3 pose vs OpenCV essential matrix, rotation (mean), raw → refined | 0.93° → 0.86° | 0.44° → 0.44° |
+| … translation direction (median), raw → refined | 35.5° → 32.4° | 51.4° → 44.0° |
+| Trajectory jitter (mean acceleration), raw → refined | 0.061 → 0.033 m | 0.028 → 0.014 m |
+| Verified landmarks; reprojection median / RMSE | 1,404; 2.32 / 3.47 px | 2,786; 1.86 / 3.17 px |
+| ICP: median depth disagreement, pass 1 → pass 2 | 4.5 → 2.5 cm (184 of 197 frames accepted) | 3.9 → 2.7 cm (209 of 212) |
+| Walls: RMS of the measured surface about the fitted plane (median over walls) | 3.9 cm (5 walls) | 3.1 cm (14 walls) |
+| Textured clean model rendered from each video camera vs the frame: PSNR / SSIM (exposure-matched) | 18.1 dB / 0.80 | 20.5 dB / 0.84 |
+| Clean model vs measured mesh: share within 5 cm (completeness / accuracy) | 67% / 69% | 82% / 74% |
+| Room model | main room 25.8 m² (4.7 × 6.05 m) + 1.6 m²; ceiling 2.67 m; 6 walls, 4 doors | 45.8 m² (8.2 × 8.4 m); ceiling 3.11 m; 14 walls, 4 doors, 4 openings |
+| Objects named by Grounding DINO | 10 of 15 (sofas, armchairs, mirror, TV, lamp, doors) | 15 of 31 (sofa, armchairs, table, staircase, shelf, mirror, fan, stool, picture frame, bucket, doors) |
+
+OpenCV's checks matter most where Depth Anything 3 is least sure: the refinement halves the trajectory jitter on
+both videos and moves the poses towards the epipolar geometry OpenCV measures; ICP then halves the depth
+disagreement between frames before fusion. Rotation agrees with OpenCV to under 1°. The translation direction
+between neighbouring frames agrees less well (32–44° median) because their baselines are a few centimetres, where
+the direction is poorly constrained for both methods.
+
+### 7.3 Agreement with other measurements
+
+- **Platform engine.** The same engine code reproduces the platform's model of `tom_home`: 8.2 × 8.4 m and a 3.11 m
+  ceiling. On `demo_property_lite` the platform's earlier run (3 cm lite build, its own keyframes) measured 66.9% seen,
+  50.6% inspectable and 42.5% inspected; this run measures 61.6%, 48.9% and 39.6%.
+- **OpenCV-only path (CPU, no GPU).** On `demo_property_lite` against the engine's trajectory: absolute trajectory
+  error 0.183 m RMSE (median 0.153 m) over a 12.7 m path after a Sim(3) fit (scale 0.953), median rotation error
+  2.55°; Depth Anything V2 Small through `cv2.dnn` has AbsRel 0.129 (median error 0.20 m) against the engine's depth;
+  0.51 s per frame. Coverage computed by our OpenCV code on the engine's cameras matched the platform's (50.2% /
+  42.3% vs 50.6% / 42.5%). On `tom_home` the CPU path put the ceiling at 3.66 m against the engine's 3.11 m, one
+  reason the GPU engine is the default.
+
+### 7.4 Coverage and the agent's decision
+
+| Seen / inspectable / inspected (%) | demo_property_lite | tom_home |
+| --- | --- | --- |
+| Walls | 71.6 / 60.9 / 50.1 | 74.7 / 38.0 / 24.3 |
+| Floor | 79.8 / 74.6 / 62.5 | 80.5 / 59.4 / 35.2 |
+| Ceiling | 27.0 / 4.5 / 0.6 | 54.1 / 0.0 / 0.0 |
+| **Overall** | **61.6 / 48.9 / 39.6** | **70.5 / 32.1 / 20.1** |
+| Largest gap | main-room ceiling, 25.6 m² | main-room ceiling, 48.1 m² |
+
+Both walkthroughs are below the 60% inspected minimum, so the agent proposes REFER in both and sends three re-film
+requests each, led by the ceiling, which neither person filmed from close enough. The rule-based policy ran these
+(14 and 8 steps); every proposal waits for a person's approval in the viewer.
+
+### 7.5 Defect candidates
+
+| Outcome of every OpenCV candidate (score ≥ 0.35) on the keyframes | demo_property_lite | tom_home |
+| --- | --- | --- |
+| Candidates | 67 | 83 |
+| Ruled out: furniture or an object in front of the wall (depth vs room planes, Grounding DINO, MobileNetV2) | 40 | 47 |
+| Ruled out: on a door or window | 25 | 22 |
+| Ruled out: seen through an opening / outside the room model | 0 / 0 | 12 / 2 |
+| Dismissed by the agent after a second view | 1 | 0 |
+| Left for a person to review | 1 | 0 |
+| Confirmed | 0 | 0 |
+
+Both rooms are in good condition, so every candidate is a false positive and the system should confirm nothing,
+which it does. What matters is how many reach a person. On `demo_property_lite`, classical detectors alone flagged
+60 candidates (chairs, a wooden door, a clock, picture frames); placing each one against the room planes and depth
+and adding MobileNetV2 cut that to 12; the hybrid engine's room model plus Grounding DINO cut it to 1. Grounding
+DINO alone ruled out 11 and 8 candidates that the depth check let through because they are on or right against the
+wall: chairs and a sofa pushed to the wall, clocks, a picture frame, a curtain, a light switch, a shelf. The one left is a failure case: the dark edge of a wooden door cut off by the left border
+of the frame, labelled "rust" (section 8).
+
+### 7.6 Evidence integrity
+
+Both honest walkthroughs: integrity low, no flags (moiré median 1.64 and 1.41 against a threshold of 3.0; no hard
+cuts, loops or reused footage; frozen footage 0.0 s and 0.1 s). On doctored copies made for testing, all four
+manipulations were flagged: the same footage submitted for another property, a spliced cut, a looped segment, and
+the video filmed off a laptop screen (moiré median 3.6).
+
+### 7.7 Runtime
+
+| Stage (RTX 3080 Laptop, 2 threads per pool) | demo_property_lite | tom_home |
+| --- | --- | --- |
+| 3D engine | 15.4 min (Depth Anything 3 reused) | 16.3 min |
+| OpenCV analysis | 61 s (privacy 21 s, defects with Grounding DINO 29 s, `cv2.Volume` fusion 7 s) | 80 s (32 s, 31 s, 11 s) |
+| Viewer files (coverage, live map video, GLBs with pins) | 76 s | 116 s |
+
+The engine's CPU steps (ICP alignment, the 1.5 cm TSDF, texturing) take most of the time; the thread caps keep a
+laptop usable at the cost of speed. The `--mode lite` build (3 cm TSDF, one alignment pass, no preview videos) is the
+faster option.
 
 ## 8. Limitations
 
-_To be completed._
+- **No ground truth here.** Neither room has a LiDAR scan, a tape survey or real damage. The reconstruction numbers
+  are consistency and agreement measures, and defect recall is not measured: footage of rooms with real cracks, damp
+  and mould is the next evaluation.
+- **Scale comes from an assumed camera height** (1.5 m above the fitted floor; scale factors ×2.78 and ×4.20 here).
+  A phone held higher or lower scales every distance, area and the 3 m "inspectable" rule with it.
+- **Ceilings are the blind spot of phone walkthroughs**: 0.6% and 0% inspected. The system reports this and refers
+  rather than assuming the ceiling is fine, but it cannot find a leak nobody filmed.
+- **Failure case: objects cut by the frame edge.** The one candidate left on `demo_property_lite` is a sliver of a
+  dark door at the image border. Grounding DINO needs to see most of an object to box it, and the door in the room
+  model did not reach that part of the frame. The agent sent it to a person instead of confirming it.
+- **Failure case: classical detectors confuse objects with damage.** Without the room model and Grounding DINO, 60
+  candidates on a room with no damage were mostly brown chairs and wooden doors. The semantic veto is required. Grounding DINO
+  tiny's damage boxes corroborated none of the candidates that reached review, so they add little on fine cracks.
+- **Failure case: the CPU-only path drifts in scale** (ceiling 3.66 m against 3.11 m on `tom_home`). Without an
+  NVIDIA GPU the measurements are less reliable.
+- **Manhattan rooms.** Walls are fitted as planes on two perpendicular axes; curved or angled walls stay in the
+  measured mesh and are not inspected as walls.
+- **No global loop closure.** One and zero loops were verified; drift over a long multi-room walk is not corrected.
+- **Model, not evidence, where unseen.** Surfaces the video never saw are filled in the textured model (synthesised
+  floor pattern, median wall colour) and marked as inferred; furniture backs and undersides are missing; 21 of 46
+  objects stay unnamed.
+- **Integrity checks** were tested on synthetic manipulations and calibrated on two honest videos.
+- **Not in this build:** Gaussian splatting (no prebuilt Windows gsplat for this Python version; the Inria code is
+  non-commercial), and the Bedrock agent in these runs (the rule-based policy ran the same tools; AWS deployment is
+  pending).
 
 ## 9. Responsible use
 
