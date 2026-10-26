@@ -5,3 +5,23 @@ boto3==1.40.64
 fastapi==0.120.4
 uvicorn==0.38.0
 python-multipart==0.0.20
+
+# 3D engine (engine3d/): Depth Anything 3 + OpenCV 5 SLAM + ICP + TSDF + clean room shell, and Grounding DINO.
+# torch from the CUDA 12.4 index on an NVIDIA machine:
+#   uv pip install "torch==2.5.1+cu124" "torchvision==0.20.1+cu124" --index-url https://download.pytorch.org/whl/cu124
+torch==2.5.1
+torchvision==0.20.1
+open3d==0.19.0          # 0.20 ScalableTSDFVolume returns empty meshes
+trimesh==5.1.0
+scipy==1.17.1
+pillow==12.3.0
+einops==0.8.2
+addict==2.4.0
+omegaconf==2.3.1
+huggingface_hub==0.36.2
+safetensors==0.8.0
+transformers==4.57.1    # Grounding DINO
+imageio==2.37.4
+imageio-ffmpeg==0.6.0
+plyfile==1.1.5
+tqdm==4.70.1

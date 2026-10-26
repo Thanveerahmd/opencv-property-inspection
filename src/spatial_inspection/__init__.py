@@ -10,6 +10,9 @@ __version__ = "0.1.0"
 # OpenCV uses every core by default. Several analysis processes at full load can overheat a laptop, so each process
 # gets a fixed number of threads (SI_THREADS, default 4) and, on a workstation, a lower scheduling priority.
 cv2.setNumThreads(int(os.environ.get("SI_THREADS", "4")))
+# OpenCL (UMat) stays off unless asked for: cv2.Volume's OpenCL path fails on some drivers, and the CPU path is the
+# one that is tested
+cv2.ocl.setUseOpenCL(os.environ.get("SI_OPENCL", "0") == "1")
 
 
 def lower_priority() -> None:

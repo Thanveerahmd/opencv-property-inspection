@@ -19,6 +19,8 @@ addopts = "-q"
 [tool.ruff]
 line-length = 132
 target-version = "py311"
+# vendored upstream code (Depth Anything 3, Apache-2.0)
+extend-exclude = ["depth_anything_3"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
@@ -28,3 +30,6 @@ select = ["E", "F", "I", "B", "UP"]
 "src/spatial_inspection/server.py" = ["B008"]
 # the report is an HTML template: its lines are markup, not code
 "src/spatial_inspection/report.py" = ["E501"]
+# the 3D engine and the viewer's spatial modules come from the Property Inspection Platform as they are
+"engine3d/**" = ["E", "B", "UP", "I", "F841"]
+"src/spatial_inspection/spatial/*" = ["E702", "B905", "B007"]
