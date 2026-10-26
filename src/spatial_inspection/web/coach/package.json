@@ -1,0 +1,5 @@
+{
+  "private": true,
+  "description": "Coverage coach browser modules; only here so Node (tests/js) loads them as ES modules too",
+  "type": "module"
+}

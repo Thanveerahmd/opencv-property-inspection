@@ -1,353 +1,623 @@
-// Inspection console: a dashboard over every inspection, live progress while a video is processed, and for each
-// walkthrough what OpenCV measured, how the evidence was checked, what the agent decided and the person's approval.
-import * as THREE from "three";
-import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-
+"use strict";
+// Inspection console (the Property Inspection Platform's UI, OpenCV 5 edition): dashboard over every walkthrough,
+// the walkthrough list, the upload form and live progress while a video is processed. Each finished walkthrough opens
+// in its own 3D viewer (/walkthroughs/<name>/, web/walkthrough.html).
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const money = (v, cur = "USD") => `${cur ? `${cur} ` : ""}${Math.round(v || 0).toLocaleString()}`;
-const KIND = { crack: "Crack", stain: "Stain", mould: "Mould", rust: "Rust", peeling: "Peeling paint", water_damage: "Water damage" };
-const STATUS = { confirmed: "Confirmed", needs_review: "Needs review", candidate: "Not reviewed", dismissed: "Dismissed" };
-let current = null;
-let poll = null;
-let viewer = null;
+const API = "/api/v1";
+const LOST = "Lost connection to the server — this job is no longer being tracked. Reload the page once the server is reachable again.";
+let clockTimer = null, lastHealth = null;
+// The progress card shows the walkthrough this page is following (its state survives moving between views).
+const runState = { walk: { t0: 0 } };
+let panelOwner = null;
 
-async function api(path, opts) {
-  const r = await fetch(path, { cache: "no-store", ...opts });
-  if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  return r.json();
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const icon = (name, size) => `<svg${size ? ` width="${size}" height="${size}"` : ""} aria-hidden="true"><use href="#i-${name}"/></svg>`;
+
+// ---- API key: only needed when the server has auth on (health.auth) --------------------------
+const KEY_LS = "pi_api_key";
+let apiKey = "";
+try { apiKey = localStorage.getItem(KEY_LS) || ""; } catch { /* storage blocked */ }
+function setApiKey(k) {
+  apiKey = String(k || "").trim();
+  try { if (apiKey) localStorage.setItem(KEY_LS, apiKey); else localStorage.removeItem(KEY_LS); } catch { /* storage blocked */ }
+}
+// URL for <img src> / <a href> / <video src>: these cannot send headers, so the key goes in the query string.
+function withKey(url) {
+  url = String(url);
+  if (!apiKey || !url.startsWith("/api/")) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}key=${encodeURIComponent(apiKey)}`;
+}
+// fetch() for the backend: `path` is relative to API ("/health") or absolute ("/api/..."); adds X-API-Key.
+function api(path, opts = {}) {
+  const headers = new Headers(opts.headers || {});
+  if (apiKey) headers.set("X-API-Key", apiKey);
+  return fetch(path.startsWith("/api/") ? path : API + path, { cache: "no-store", ...opts, headers });
+}
+function errText(r, j) {
+  let d = j && j.detail;
+  if (d && typeof d !== "string") d = JSON.stringify(d);
+  if (r.status === 401 || r.status === 403) { $("key-box").hidden = false; return "API key required or invalid — enter it in the sidebar (System status)."; }
+  return d || r.statusText || `HTTP ${r.status}`;
+}
+async function apiJson(path, opts) {
+  const r = await api(path, opts);
+  let j = null;
+  try { j = await r.json(); } catch { /* empty or non-JSON body */ }
+  if (!r.ok) throw Object.assign(new Error(errText(r, j)), { status: r.status });
+  return j;
+}
+const listOf = (j) => Array.isArray(j) ? j : (j && (j.items || j.rows)) || [];
+
+// ---- formatting helpers (risk, money, dates) -----------------------------------------------------
+const GRADES = ["A", "B", "C", "D", "E"];
+const gcls = (g) => GRADES.includes(g) ? g : "x";
+const gradeBadge = (g) => g ? `<span class="gb g-${gcls(g)}" title="Condition grade ${esc(g)}">${esc(g)}</span>` : `<span class="gb g-x" title="Not graded">–</span>`;
+const decisionCls = (d) => /^PROCEED WITH|CONDITION/i.test(d || "") ? "cond" : /^PROCEED|^ACCEPT/i.test(d || "") ? "go" : /^REFER/i.test(d || "") ? "refer" : "cond";
+const decShort = (d) => String(d || "—").replace(/\s+-\s+/, " — ");
+function money(v, cur) {
+  if (v == null || v === "" || isNaN(v)) return "—";
+  try { return new Intl.NumberFormat(undefined, { style: "currency", currency: cur || "USD", maximumFractionDigits: 0 }).format(v); }
+  catch { return `${Math.round(v).toLocaleString()} ${cur || ""}`.trim(); }
+}
+const moneyRange = (a, b, cur) => a == null && b == null ? "—" : (b == null || a === b) ? money(a ?? b, cur) : `${money(a, cur)} – ${money(b, cur)}`;
+const pctRange = (r) => Array.isArray(r) ? (r[0] === r[1] ? `${r[0]}%` : `${r[0]}% to ${r[1]}%`) : r == null ? "—" : `${r}%`;
+function fmtDate(v, short) {
+  if (v == null || v === "") return "";
+  const d = new Date(typeof v === "number" && v < 1e12 ? v * 1000 : v);
+  return isNaN(d) ? String(v) : d.toLocaleString(undefined, short ? { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }
+    : { dateStyle: "medium", timeStyle: "short" });
+}
+const covPct = (c) => c == null ? null : typeof c === "object" ? c.inspectable_pct ?? null : c;
+
+function toast(html, ms = 8000) {
+  const t = $("toast"); t.innerHTML = html; t.hidden = false;
+  clearTimeout(toast.timer); toast.timer = setTimeout(() => { t.hidden = true; }, ms);
 }
 
-function show(view) {
-  for (const id of ["dash", "progress", "empty", "detail"]) $(id).hidden = id !== view;
-  $("navDash").classList.toggle("on", view === "dash");
-  $("navInsp").classList.toggle("on", view !== "dash");
+// ---- theme ---------------------------------------------------------------------------------------
+const THEME_LS = "pi_theme";
+const darkMQ = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+function effectiveTheme() {
+  const t = document.documentElement.getAttribute("data-theme");
+  return t === "dark" || t === "light" ? t : darkMQ && darkMQ.matches ? "dark" : "light";
+}
+function paintThemeBtn() {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  $("theme-btn").innerHTML = `${icon(next === "dark" ? "moon" : "sun")}<span>${next === "dark" ? "Dark" : "Light"} mode</span>`;
+  $("theme-btn").setAttribute("aria-label", `Switch to ${next} theme`);
+}
+function toggleTheme() {
+  const next = effectiveTheme() === "dark" ? "light" : "dark";
+  document.documentElement.setAttribute("data-theme", next);
+  try { localStorage.setItem(THEME_LS, next); } catch { /* storage blocked */ }
+  paintThemeBtn();
 }
 
+// ---- init ------------------------------------------------------------------------------------------
+async function init() {
+  $("api-key").value = apiKey;
+  $("api-key").onchange = () => { setApiKey($("api-key").value); refreshAll(); };
+  paintThemeBtn();
+  $("theme-btn").onclick = toggleTheme;
+  if (darkMQ && darkMQ.addEventListener) darkMQ.addEventListener("change", paintThemeBtn);
+  health(); setInterval(health, 15000);
+  walks(); setInterval(walks, 20000);
+
+  const wd = $("walk-drop");
+  wd.onclick = () => $("walk-file").click();
+  wd.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("walk-file").click(); } };
+  wd.ondragover = (e) => { e.preventDefault(); wd.classList.add("over"); };
+  wd.ondragleave = () => wd.classList.remove("over");
+  wd.ondrop = (e) => {
+    e.preventDefault(); wd.classList.remove("over");
+    const f = e.dataTransfer.files[0];
+    if (f && f.type.startsWith("video/")) { const dt = new DataTransfer(); dt.items.add(f); $("walk-file").files = dt.files; pickWalk(); }
+  };
+  $("walk-file").onchange = pickWalk;
+  $("walk-form").onsubmit = submitWalk;
+  document.querySelectorAll('input[name="walk-mode"]').forEach((x) => x.addEventListener("change", () => { modeTouched = true; }));
+  // Scanning view readout: which moment of the walkthrough video is on screen.
+  const rv = $("run-vid"), mmss = (s) => `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+  rv.addEventListener("timeupdate", () => {
+    $("scan-hud").hidden = rv.hidden || !rv.duration;
+    if (rv.duration) $("scan-hud").textContent = `${mmss(rv.currentTime)} / ${mmss(rv.duration)}`;
+  });
+  $("pf-refresh").onclick = portfolio;
+  window.onhashchange = route;
+  route();
+}
+
+function refreshAll() { health(); walks(); if (currentView === "dashboard") portfolio(); }
+
+// ---- routing: #/dashboard, #/walkthroughs, #/walkthroughs/new -------------------------------------
+let currentView = null, currentRouteId = null;
+function parseRoute() {
+  let h = decodeURIComponent(location.hash.replace(/^#\/?/, ""));
+  if (h === "portfolio") h = "dashboard";
+  if (h === "inspect") h = "walkthroughs";
+  const [view, id] = h.split("/");
+  return { view: ["dashboard", "walkthroughs"].includes(view) ? view : "dashboard", id: id || null };
+}
+function go(hash) { if (location.hash !== hash) location.hash = hash; else route(); }
+
+function route() {
+  const r = parseRoute();
+  const changed = r.view !== currentView || r.id !== currentRouteId;
+  currentView = r.view; currentRouteId = r.id;
+  for (const v of ["dashboard", "walkthroughs"]) {
+    $("view-" + v).hidden = v !== r.view;
+    $("nav-" + v).classList.toggle("on", v === r.view);
+    if (v === r.view) $("nav-" + v).setAttribute("aria-current", "page"); else $("nav-" + v).removeAttribute("aria-current");
+  }
+  if (changed) window.scrollTo(0, 0);
+  hideError();
+  if (r.view === "dashboard") { portfolio(); renderWalkCards(); }
+  if (r.view === "walkthroughs") { renderWalkCards(); if (r.id === "new") showUploadForm(); }
+  document.title = { dashboard: "Dashboard", walkthroughs: "Video walkthroughs" }[r.view] + " · Property Inspection AI";
+  placeRunning();
+}
+
+// "New walkthrough" (#/walkthroughs/new): bring the upload form into view and put focus on the drop zone,
+// instead of leaving the visitor on the list of finished walkthroughs.
+function showUploadForm() {
+  requestAnimationFrame(() => {
+    $("walk-form").scrollIntoView({ behavior: "smooth", block: "start" });
+    $("walk-drop").focus({ preventScroll: true });
+  });
+}
+
+// The progress card sits on the walkthroughs page while a walkthrough is followed.
+function placeRunning() {
+  const run = $("running");
+  const slot = watching && currentView === "walkthroughs" ? "walk-run-slot" : null;
+  $("nav-walk-live").hidden = !watching;
+  if (!slot) { run.hidden = true; panelOwner = null; return; }
+  if (panelOwner !== "walk") paintOwner("walk");
+  if (run.parentElement.id !== slot) $(slot).appendChild(run);
+  run.hidden = false;
+}
+
+// Sidebar "System status": the models this edition runs, the GPU and the integrations.
+let modeTouched = false;
 async function health() {
+  const el = $("health");
   try {
-    const h = await api("/api/health");
-    $("badges").innerHTML = [
-      `<span class="badge on">OpenCV ${esc(h.opencv)}</span>`,
-      `<span class="badge ${h.s3 ? "on" : ""}">Amazon S3 ${h.s3 ? "on" : "off"}</span>`,
-      `<span class="badge ${h.bedrock_model ? "on" : ""}">Amazon Bedrock ${h.bedrock_model ? "agent" : "off"}</span>`,
-    ].join("");
-  } catch { /* the badges are decoration */ }
+    const r = await api("/health");
+    const h = await r.json();
+    lastHealth = h;
+    el.className = "health ok"; el.textContent = "Online";
+    const busy = (walkItems || []).some((w) => w.status === "running");
+    const gpu = h.cuda ? (busy ? "GPU · in use" : "GPU") : "no GPU";
+    const rows = [
+      ["Depth Anything 3", gpu, !!h.cuda, "Depth: Depth Anything 3 in the 3D engine"],
+      [`OpenCV ${h.opencv || "5"}`, "SLAM · defects", true, `OpenCV ${h.opencv || "?"}: camera tracking (SLAM), coverage, evidence integrity and defect analysis`],
+      ["Inspection agent", h.bedrock_model ? "Bedrock" : "Bedrock / rules", true,
+        h.bedrock_model ? `Agent: Amazon Bedrock ${h.bedrock_model} (rule-based policy if it is unavailable)`
+          : "Agent: Amazon Bedrock when AWS credentials are set, otherwise the rule-based policy"],
+    ];
+    $("models").innerHTML = rows.map(([n, where, on, tip]) =>
+      `<li title="${esc(tip)}"><span class="dot ${on ? "on" : ""}"></span><span class="nm">${esc(n)}</span><span class="where">${esc(where)}</span></li>`).join("");
+    if (h.vram_total_mb) {
+      $("vram").hidden = false;
+      $("gpu-name").textContent = String(h.gpu || "GPU").replace(/^NVIDIA\s+(GeForce\s+)?/i, "").replace(/\s+Laptop GPU$/i, "");
+      $("vram-txt").textContent = `${((h.vram_used_mb || 0) / 1024).toFixed(1)} / ${(h.vram_total_mb / 1024).toFixed(1)} GB`;
+      $("vram-bar").style.width = `${Math.min(100, 100 * (h.vram_used_mb || 0) / h.vram_total_mb).toFixed(1)}%`;
+    } else $("vram").hidden = true;
+    // The server's default mode (SI_MODE) preselects Lite / Advanced until the visitor picks one.
+    if (!modeTouched && (h.mode === "lite" || h.mode === "advanced")) {
+      const radio = document.querySelector(`input[name="walk-mode"][value="${h.mode}"]`);
+      if (radio) radio.checked = true;
+    }
+    const running = Array.isArray(h.running) ? h.running.length : h.running || 0;
+    paintVideoQueue();
+    el.title = ["AWS integrations", `• Amazon S3: ${h.s3 ? "on" : "off"}`,
+      `• Amazon Bedrock agent: ${h.bedrock_model || "default model if AWS credentials are set"}`,
+      `OpenCV ${h.opencv || "?"}`, h.gpu ? `GPU: ${h.gpu}` : "GPU: none found",
+      `API key: ${h.auth ? "required" : "not required"}`, running ? `Running jobs: ${running}` : null].filter(Boolean).join("\n");
+    if (h.auth) $("key-box").hidden = false; else if (!apiKey) $("key-box").hidden = true;
+    $("pf-bq").textContent = h.s3 ? " (on)" : " (currently off)";
+  } catch { el.className = "health bad"; el.textContent = "Offline"; el.title = "Backend not reachable"; }
 }
 
-const decisionOf = (w) => w.decision?.decision || w.decision?.proposed;
-
-async function refreshList() {
-  const items = await api("/api/walkthroughs");
-  $("list").innerHTML = items.map((w) => {
-    const d = decisionOf(w);
-    const tag = w.state !== "done"
-      ? `<span class="small muted">${esc(w.state)}${w.progress != null ? ` · ${Math.round(w.progress * 100)}%` : ""}${w.stage ? ` · ${esc(w.stage)}` : ""}</span>`
-      : `<span class="small muted">${w.grade ? `Grade ${esc(w.grade)} · ` : ""}${w.inspected_pct ?? "–"}% inspected ${d ? `· <span class="pill d-${esc(d)}">${esc(d)}</span>` : ""}</span>`;
-    return `<li class="item ${w.name === current ? "on" : ""}" data-name="${esc(w.name)}"><b>${esc(w.property || w.name)}</b>${w.property ? `<span class="small muted">${esc(w.name)}</span>` : ""}${tag}</li>`;
-  }).join("") || `<li class="muted small">None yet.</li>`;
-  for (const li of $("list").querySelectorAll("li.item")) li.onclick = () => { location.hash = encodeURIComponent(li.dataset.name); };
-  return items;
+// ---- progress card ---------------------------------------------------------------------------------
+function paintOwner(kind) {
+  panelOwner = kind;
+  const st = runState.walk, v = $("run-vid");
+  $("run-title").textContent = `Processing “${st.name || "walkthrough"}”`;
+  $("run-note").textContent = WALK_NOTE;
+  $("run-log").textContent = st.log || "starting…";
+  // A stored video that can't be loaded (file removed, format the browser can't play) hides the preview.
+  v.onerror = () => { if (panelOwner === "walk" && runState.walk.videoUrl) { runState.walk.videoUrl = null; paintOwner("walk"); } };
+  if (st.videoUrl) { if (v.getAttribute("src") !== st.videoUrl) v.src = st.videoUrl; v.hidden = false; v.play().catch(() => {}); }
+  else { v.hidden = true; v.pause(); }
+  $("run-scan").hidden = !st.videoUrl;
+  $("run-stage").textContent = st.stageText || "Starting";
+  $("scan-tag").textContent = st.stageText || "Processing";
+  if (st.prog) paintProgress(...st.prog); else resetProgress();
+  tickClock();
 }
 
-// ---------------------------------------------------------------- dashboard
-
-async function dashboard() {
-  current = null;
-  clearTimeout(poll);
-  show("dash");
-  await refreshList();
-  const d = await api("/api/dashboard");
-  const ex = d.repair_exposure;
-  const tile = (label, value, note = "") => `<div class="card kpi"><span class="lbl">${label}</span><span class="big">${value}</span><span class="small muted">${note}</span></div>`;
-  $("kpis").innerHTML = [
-    tile("Inspections", d.walkthroughs, `${d.analysed} analysed${d.processing ? ` · ${d.processing} processing` : ""}`),
-    tile("Awaiting approval", d.awaiting_approval, "agent proposals a person has not signed off"),
-    tile("Surface inspected", d.mean_inspected_pct != null ? `${d.mean_inspected_pct}%` : "–", "mean per walkthrough (rule: 60%)"),
-    tile("Repair exposure", ex.high ? `${money(ex.low, "")}–${money(ex.high, "")}` : "0", `${esc(ex.currency)}, indicative`),
-    tile("Findings", d.confirmed, `confirmed · ${d.review} awaiting review`),
-  ].join("");
-
-  // one series (count per grade): single hue, value labels on the bars, hover tooltip; the table below is the table view
-  const max = Math.max(1, ...Object.values(d.grades));
-  const label = { A: "Good", B: "Fair", C: "Below average", D: "Poor", E: "Very poor" };
-  $("gradeChart").setAttribute("aria-label", `Inspections by condition grade: ${Object.entries(d.grades).map(([g, n]) => `${g} ${n}`).join(", ")}`);
-  $("gradeChart").innerHTML = Object.entries(d.grades).map(([g, n]) => `<div class="gcol" tabindex="0">
-      <span class="tip">Grade ${g} (${label[g]}): ${n} inspection${n === 1 ? "" : "s"}</span>
-      <span class="gval">${n}</span><span class="gbar" style="height:${(n / max) * 100}%"></span><span class="glab">${g}</span></div>`).join("");
-
-  const list = (title, obj) => `<div><h4>${title}</h4>${Object.keys(obj).length ? Object.entries(obj).map(([k, v]) => `<div class="kv"><span>${esc(k)}</span><b>${v}</b></div>`).join("") : "<p class='muted small'>None yet</p>"}</div>`;
-  $("dashSplit").innerHTML = list("Decisions", d.decisions) + list("Risk level", d.risk_levels) + list("Evidence integrity", d.integrity);
-
-  $("dashTable").innerHTML = `<tr><th>Property</th><th>Grade</th><th>Risk</th><th>Decision</th><th>Inspected</th><th>Repair cost</th><th>Integrity</th><th>Updated</th></tr>`
-    + d.recent.map((w) => {
-      const dec = decisionOf(w);
-      return `<tr class="click" data-name="${esc(w.name)}"><td><b>${esc(w.property || w.name)}</b>${w.property ? `<br><span class="small muted">${esc(w.name)}</span>` : ""}</td>
-        <td>${w.grade ? `<span class="grade g${esc(w.grade)}">${esc(w.grade)}</span>` : "–"}</td><td>${esc(w.risk_level || (w.state !== "done" ? w.state : "–"))}</td>
-        <td>${dec ? `<span class="pill d-${esc(dec)}">${esc(dec)}</span> <span class="small muted">${esc(w.decision?.state === "awaiting approval" ? "proposed" : "approved")}</span>` : "–"}</td>
-        <td>${w.inspected_pct != null ? `${w.inspected_pct}%` : "–"}</td>
-        <td>${w.repair_cost ? `${money(w.repair_cost.low, "")}–${money(w.repair_cost.high, "")}` : "–"}</td>
-        <td>${w.integrity ? `<span class="lvl ${esc(w.integrity)}">${esc(w.integrity)}</span>` : "–"}</td><td class="small muted">${esc(w.updated)}</td></tr>`;
-    }).join("");
-  for (const tr of $("dashTable").querySelectorAll("tr.click")) tr.onclick = () => { location.hash = encodeURIComponent(tr.dataset.name); };
+function setStageText(kind, txt) {
+  runState[kind].stageText = txt;
+  if (panelOwner === kind) { $("run-stage").textContent = txt; $("scan-tag").textContent = txt; }
 }
 
-// ---------------------------------------------------------------- one walkthrough
+const fmtDur = (s) => {
+  s = Math.max(0, Math.round(s));
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m} min ${String(s % 60).padStart(2, "0")} s` : `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")} min`;
+};
 
-const STEPS = [
-  ["frames", "Read frames, check sharpness and exposure"], ["tracking", "Depth (cv2.dnn) and camera tracking"],
-  ["levelling", "Level the floor, fix metric scale"], ["analysis", "Integrity, privacy, 3D fusion, layout, coverage, defects, walls"],
-  ["agent", "Agent reviews the evidence and proposes a decision"],
-];
-
-function showProgress(name, st) {
-  show("progress");
-  $("pName").textContent = `${st.property ? `${st.property} · ` : ""}${name}`;
-  $("pStage").textContent = st.state === "failed" ? "Processing failed" : st.stage || st.state;
-  const p = Math.round((st.progress || 0) * 100);
-  $("pBar").style.width = `${p}%`;
-  const fmt = (s) => (s == null ? "–" : s >= 60 ? `${Math.floor(s / 60)} min ${Math.round(s % 60)} s` : `${Math.round(s)} s`);
-  $("pTimes").innerHTML = st.state === "failed" ? `<span class="lvl high">${esc(st.error)}</span>`
-    : `<b>${p}%</b> · elapsed ${fmt(st.elapsed_s)} · about ${fmt(st.eta_s)} left`;
-  const at = STEPS.findIndex(([k]) => k === st.step);
-  $("pSteps").innerHTML = STEPS.map(([k, label], i) => `<li class="${st.state === "queued" ? "" : i < at ? "done" : i === at ? "now" : ""}">${label}</li>`).join("");
-  const v = $("pVideo");
-  if (st.video && !v.dataset.src) { v.dataset.src = st.video; v.src = `/uploads/${encodeURIComponent(st.video)}`; }
+// Fill the progress bar with a real percentage + elapsed / remaining time.
+function setProgress(kind, pct, label, elapsedS, etaS) {
+  runState[kind].prog = [pct, label, elapsedS, etaS];
+  if (panelOwner === kind) paintProgress(pct, label, elapsedS, etaS);
+}
+function paintProgress(pct, label, elapsedS, etaS) {
+  pct = Math.max(0, Math.min(100, pct));
+  const bar = $("run-bar");
+  bar.classList.add("det"); bar.querySelector("span").style.width = pct.toFixed(1) + "%";
+  const eta = etaS == null ? "" : etaS > 0 ? `<span>about <b>${fmtDur(etaS)}</b> left</span>` : "";
+  $("run-progress").innerHTML = `<span><b>${Math.floor(pct)}%</b></span>` + (label ? `<span>${esc(label)}</span>` : "") +
+    `<span>${fmtDur(elapsedS)} elapsed</span>` + eta;
 }
 
-async function open(name) {
-  current = name;
-  await refreshList();
-  let data;
-  try { data = await api(`/api/walkthroughs/${encodeURIComponent(name)}`); } catch { show("empty"); return; }
-  clearTimeout(poll);
-  if (!data.result || ["queued", "processing"].includes(data.status?.state)) {
-    showProgress(name, data.status || {});
-    if (data.status?.state !== "failed") poll = setTimeout(() => current === name && open(name), 2000);
+function resetProgress() {
+  const bar = $("run-bar");
+  bar.classList.remove("det"); bar.querySelector("span").style.width = "";
+  $("run-progress").innerHTML = "";
+}
+
+function tickClock() {
+  if (panelOwner) $("run-elapsed").textContent = fmtDur((Date.now() - runState[panelOwner].t0) / 1000) + " elapsed";
+}
+function startClock() { if (!clockTimer) clockTimer = setInterval(tickClock, 1000); tickClock(); }
+function stopClockIfIdle() { if (!watching) { clearInterval(clockTimer); clockTimer = null; } }
+
+function busy(b, on, label) {
+  b.disabled = on; b.classList.toggle("busy", on);
+  const svg = b.querySelector("svg");
+  b.textContent = label; if (svg && !on) b.prepend(svg);
+}
+
+// ---- Portfolio / dashboard -------------------------------------------------------------------------
+let pf = null, pfSort = { key: "created_at", dir: -1 }, pfBusy = false;
+const PF_COLS = [["label", "Walkthrough"], ["property_id", "Property"], ["created_at", "Date"], ["grade", "Grade"],
+  ["condition_score", "Score"], ["risk_level", "Risk"], ["decision", "Decision"], ["repair_high", "Repair cost"],
+  ["valuation_pct", "Value impact"], ["coverage_pct", "Coverage"]];
+
+async function portfolio() {
+  if (pfBusy) return;
+  pfBusy = true;
+  $("pf-err").hidden = true;
+  if (!pf) $("pf-kpis").innerHTML = ["Walkthroughs", "Repair exposure", "Referred", "Average coverage"].map((k) =>
+    `<div class="kpi"><div class="k">${k}</div><div class="v muted">…</div></div>`).join("");
+  busy($("pf-refresh"), true, "Refresh");
+  try { pf = await apiJson("/portfolio"); renderPortfolio(); }
+  catch (e) { $("pf-err").textContent = "Cannot load portfolio: " + e.message; $("pf-err").hidden = false; }
+  finally { busy($("pf-refresh"), false, "Refresh"); pfBusy = false; }
+}
+
+function renderPortfolio() {
+  const p = pf || {}, rows = p.rows || [], ex = p.repair_exposure || {}, cur = ex.currency || "USD";
+  const byDec = p.by_decision || {}, byGrade = p.by_grade || {}, byRisk = p.by_risk_level || {};
+  const n = p.n ?? rows.length;
+  const referred = Object.entries(byDec).filter(([k]) => /^REFER/i.test(k)).reduce((a, [, c]) => a + c, 0);
+  const nProps = new Set(rows.map((r) => r.property_id || r.id)).size;
+  const covs = rows.map((r) => covPct(r.coverage_pct)).filter((c) => c != null);
+  const avgCov = covs.length ? Math.round(covs.reduce((a, c) => a + c, 0) / covs.length) : null;
+  const pct = (a) => n ? `${Math.round(100 * a / n)}% of records` : "";
+  const tile = (ico, tone, k, v, s) => `<div class="kpi"><div class="k"><span class="ico ${tone}">${icon(ico)}</span>${k}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ""}</div>`;
+  $("pf-kpis").innerHTML = tile("video", "", "Walkthroughs", esc(n), `${nProps} ${nProps === 1 ? "property" : "properties"} inspected by video`) +
+    tile("coin", "amber", "Repair exposure", moneyRange(ex.low, ex.high, cur), "low – high estimate, whole book") +
+    tile("refer", "red", "Referred", esc(referred), pct(referred) || "decision = REFER") +
+    tile("scan", "", "Average coverage", avgCov != null ? `${avgCov}%` : "—", "of surfaces filmed close enough to inspect");
+
+  const max = Math.max(1, ...GRADES.map((g) => byGrade[g] || 0));
+  $("pf-grades").innerHTML = GRADES.map((g) => `<div class="gbar"><span class="gb g-${g}">${g}</span>
+    <div class="track" role="img" aria-label="Grade ${g}: ${byGrade[g] || 0}"><i class="g-${g}" style="width:${(100 * (byGrade[g] || 0) / max).toFixed(1)}%"></i></div><b>${byGrade[g] || 0}</b></div>`).join("");
+
+  const LVL = [["Low", "c-ok"], ["Moderate", "c-rev"], ["Medium", "c-rev"], ["High", "c-det"], ["Critical", "c-det"]];
+  const riskKeys = Object.keys(byRisk).sort((a, b) => LVL.findIndex((x) => x[0] === a) - LVL.findIndex((x) => x[0] === b));
+  const tot = riskKeys.reduce((a, k) => a + byRisk[k], 0) || 1;
+  const lc = (k) => (LVL.find((x) => x[0] === k) || [0, "c-mute"])[1];
+  $("pf-risk").innerHTML = riskKeys.length ? `<div class="stackbar" role="img" aria-label="Risk level breakdown">${riskKeys.map((k) =>
+      `<i class="${lc(k)}" style="width:${(100 * byRisk[k] / tot).toFixed(1)}%" title="${esc(k)}: ${byRisk[k]}"></i>`).join("")}</div>
+    <ul class="legend-list">${riskKeys.map((k) => `<li><span class="sw ${lc(k)}"></span>${esc(k)}<b>${byRisk[k]}</b><span class="pct">${Math.round(100 * byRisk[k] / tot)}%</span></li>`).join("")}</ul>`
+    : `<div class="empty-state">No graded records yet.</div>`;
+
+  const decs = Object.entries(byDec).sort((a, b) => b[1] - a[1]);
+  const dmax = Math.max(1, ...decs.map(([, c]) => c));
+  const dc = (k) => ({ go: "c-ok", cond: "c-rev", refer: "c-det" }[decisionCls(k)]);
+  $("pf-dec").innerHTML = decs.map(([k, c]) => `<div class="dec-bar"><div class="top"><span title="${esc(k)}">${esc(decShort(k))}</span><b>${c}</b></div>
+      <div class="track"><i class="${dc(k)}" style="width:${(100 * c / dmax).toFixed(1)}%"></i></div></div>`).join("")
+    || `<div class="empty-state">No decisions yet.</div>`;
+
+  const { key, dir } = pfSort;
+  const val = (r) => { const v = key === "coverage_pct" ? covPct(r[key]) : r[key]; return Array.isArray(v) ? v[0] : v; };
+  const sorted = rows.slice().sort((a, b) => {
+    const x = val(a), y = val(b);
+    if (x == null && y == null) return 0; if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * dir;
+  });
+  $("pf-head").innerHTML = `<tr>${PF_COLS.map(([k, l]) =>
+    `<th data-k="${k}" tabindex="0" aria-sort="${k === key ? (dir > 0 ? "ascending" : "descending") : "none"}" class="${k === key ? "sorted" + (dir > 0 ? " asc" : "") : ""}${["condition_score", "repair_high", "valuation_pct", "coverage_pct"].includes(k) ? " num" : ""}">${l}</th>`).join("")}</tr>`;
+  $("pf-head").querySelectorAll("th").forEach((th) => {
+    th.onclick = () => {
+      pfSort = { key: th.dataset.k, dir: pfSort.key === th.dataset.k ? -pfSort.dir : (th.dataset.k === "created_at" ? -1 : 1) };
+      renderPortfolio();
+    };
+    th.onkeydown = (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); th.click(); } };
+  });
+  $("pf-rows").innerHTML = sorted.map((r) => {
+    const cov = covPct(r.coverage_pct);
+    return `<tr class="click" tabindex="0" data-id="${esc(r.id)}">
+    <td><div class="cell-main" style="max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.label || r.id)}</div></td>
+    <td>${esc(r.property_id || "—")}</td>
+    <td class="nowrap muted">${esc(fmtDate(r.created_at, true))}</td>
+    <td>${gradeBadge(r.grade)}</td><td class="num">${esc(r.condition_score ?? "—")}</td>
+    <td>${r.risk_level ? `<span class="lvl ${esc(r.risk_level)}">${esc(r.risk_level)}</span>` : "—"}</td>
+    <td><span class="dec-txt ${decisionCls(r.decision)}" title="${esc(r.decision || "")}${r.approval ? ` · approved: ${esc(r.approval)}` : ""}">${esc(String(r.decision || "—").split(" - ")[0])}</span></td>
+    <td class="num">${moneyRange(r.repair_low, r.repair_high, cur)}</td><td class="num">${pctRange(r.valuation_pct)}</td>
+    <td class="num">${cov != null ? esc(cov) + "%" : "—"}</td></tr>`;
+  }).join("") || `<tr><td colspan="${PF_COLS.length}" class="empty-state">No walkthroughs yet. Upload a video to inspect a property.</td></tr>`;
+  $("pf-rows").querySelectorAll("tr[data-id]").forEach((tr) => {
+    tr.onclick = () => window.open(`/walkthroughs/${encodeURIComponent(tr.dataset.id)}/`, "_blank", "noopener");
+    tr.onkeydown = (e) => { if (e.key === "Enter") tr.click(); };
+  });
+}
+
+// ---- Walkthroughs ----------------------------------------------------------------------------------
+let watching = null, walkItems = null;
+const WALK_STEPS = ["upload", "slam", "coverage", "ai", "render"];
+const WALK_NOTE = "Depth Anything 3 + OpenCV 5 SLAM build the 3D model on the GPU, then OpenCV analyses the keyframes and the agent proposes a decision — usually several minutes. You can leave this page open; the results open automatically when finished.";
+
+// Walkthroughs uploaded from this browser: only those are re-attached automatically, so other people's
+// jobs on a shared demo server don't take over this page (their cards stay clickable).
+const MY_WALKS_LS = "pi_my_walks";
+function myWalks() { try { return JSON.parse(localStorage.getItem(MY_WALKS_LS) || "[]"); } catch { return []; } }
+function rememberWalk(name) {
+  try { localStorage.setItem(MY_WALKS_LS, JSON.stringify([...myWalks().filter((n) => n !== name), name].slice(-20))); }
+  catch { /* storage blocked */ }
+}
+
+async function walks() {
+  try {
+    walkItems = listOf(await apiJson("/walkthroughs"));
+    renderWalkCards();
+    // Re-attach to this browser's walkthrough that is still queued or processing (page reload, second tab, ...).
+    const mine = myWalks();
+    const run = walkItems.find((w) => w.status === "running" && mine.includes(w.name))
+      || walkItems.find((w) => w.status === "queued" && mine.includes(w.name));
+    if (run && !watching) watchWalk(run.name);
+  } catch {                             // offline: don't leave stale "running" spinners in the list
+    document.querySelectorAll("#walks .mini-spin, #dash-walks .mini-spin").forEach((x) => x.remove());
+    document.querySelectorAll(".wcard.running .wstat-status").forEach((x) => { x.textContent = "server offline"; });
+  }
+}
+
+function walkCardHtml(w) {
+  if (!w.url) {
+    const thumb = w.status === "running" ? `<span><span class="mini-spin"></span>Processing…</span>`
+      : w.status === "queued" ? `<span>${icon("clock", 16)} Waiting for the GPU…</span>` : icon("video", 28);
+    const note = { running: "processing — click to follow progress",
+                   queued: "queued: waits for the walkthrough ahead of it — click to follow",
+                   interrupted: "interrupted by a server restart — click for details",
+                   failed: "failed — click for details" }[w.status] || `${w.status} — click for details`;
+    return `<button type="button" class="wcard running" data-walk="${esc(w.name)}" style="text-align:left;font:inherit;padding:0;background:var(--surface);color:var(--text)">
+      <div class="wthumb">${thumb}</div>
+      <div class="wbody"><h3>${esc(w.name)}</h3><span class="muted small wstat-status">${esc(note)}</span></div></button>`;
+  }
+  const cov = covPct(w.coverage);
+  const nf = Array.isArray(w.findings) ? w.findings.length : w.findings ?? 0;
+  return `<a class="wcard" href="${esc(w.url)}" target="_blank" rel="noopener" aria-label="Open 3D walkthrough ${esc(w.name)}">
+    <div class="wthumb"><img src="${esc(w.url)}coverage_map.png" alt="Coverage map of ${esc(w.name)}" loading="lazy" onerror="this.remove()">
+      ${w.grade ? gradeBadge(w.grade) : ""}<span class="badge3d">3D · ${esc(w.duration_s != null ? Math.round(w.duration_s) + " s" : "video")}</span></div>
+    <div class="wbody">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><h3>${esc(w.name)}${w.mode ? ` <span class="mode-tag">${w.mode === "lite" ? "Lite" : "Advanced"}</span>` : ""}</h3>${icon("ext", 15)}</div>
+      ${w.decision ? `<span class="dec-txt ${decisionCls(w.decision)}" style="align-self:flex-start">${esc(decShort(w.decision))}</span>` : ""}
+      <div class="wstats"><div><div class="k">Coverage</div><div class="v">${cov != null ? esc(cov) + "%" : "—"}</div></div>
+        <div><div class="k">Findings</div><div class="v">${esc(nf)}</div></div>
+        <div><div class="k">Rooms</div><div class="v">${Array.isArray(w.rooms) ? w.rooms.length : "—"}</div></div></div>
+      ${Array.isArray(w.rooms) && w.rooms.length ? `<span class="muted small">${esc(w.rooms.join(" · "))}</span>` : ""}
+    </div></a>`;
+}
+
+// Sidebar status line: what the GPU is doing with videos (the only job queue).
+function paintVideoQueue() {
+  const items = walkItems || [];
+  const nRun = items.filter((w) => w.status === "running").length, nWait = items.filter((w) => w.status === "queued").length;
+  const txt = nRun ? `Processing ${nRun} video${nRun > 1 ? "s" : ""}${nWait ? ` · ${nWait} waiting` : ""}`
+    : nWait ? `${nWait} video${nWait > 1 ? "s" : ""} waiting` : lastHealth && !lastHealth.cuda ? "No GPU found" : "GPU idle";
+  $("queue-txt").textContent = txt;
+  $("queue-txt").classList.toggle("busy", nRun > 0);
+}
+
+function renderWalkCards() {
+  paintVideoQueue();
+  if (!walkItems) {
+    $("walks").innerHTML = $("dash-walks").innerHTML = `<div class="card empty-state">Loading walkthroughs…</div>`;
     return;
   }
-  $("pVideo").removeAttribute("src");
-  delete $("pVideo").dataset.src;
-  show("detail");
-  render(name, data.result, data.agent);
+  const done = walkItems.filter((w) => w.url).length;
+  $("nav-walk-count").textContent = done || "";
+  const html = walkItems.map(walkCardHtml).join("");
+  $("walks").innerHTML = html || `<div class="card empty-state">No walkthroughs yet — upload a video to build the first 3D inspection.</div>`;
+  $("dash-walks").innerHTML = walkItems.filter((w) => w.url).slice(0, 6).map(walkCardHtml).join("")
+    || `<div class="card empty-state">No walkthroughs yet. <a href="#/walkthroughs/new">Upload a video</a>.</div>`;
+  document.querySelectorAll("[data-walk]").forEach((b) => b.onclick = () => { watchWalk(b.dataset.walk); go("#/walkthroughs"); });
 }
 
-function render(name, r, a) {
-  const base = `/files/${encodeURIComponent(name)}/`;
-  const dec = a?.decision;
-  const rk = a?.risk;
-  $("dName").textContent = `${r.property ? `${r.property} · ` : ""}${r.name} · ${r.frames} frames · ${r.source}`;
-  const final = a?.approval?.decision;
-  $("dDecision").innerHTML = dec ? `<span class="d-${esc(final || dec.proposed)}">${esc(final || dec.proposed)}</span>`
-    + (final ? ` <span class="small muted">approved by ${esc(a.approval.by)}</span>` : ` <span class="small muted">proposed, awaiting approval</span>`) : "No decision yet";
-  $("dSummary").textContent = dec?.summary || "";
-  $("dEngine").textContent = a ? `Decided by ${a.engine} in ${a.seconds}s · ${a.trace.length} steps` : "";
-  const q = encodeURIComponent(name);
-  $("exports").innerHTML = `<a class="btn" href="/api/walkthroughs/${q}/report.html" target="_blank" rel="noopener">Inspection report</a>
-    <a class="btn ghost" href="/api/walkthroughs/${q}/report.md">Markdown</a><a class="btn ghost" href="/api/walkthroughs/${q}/report.json">JSON</a>`;
-  $("approved").innerHTML = a?.approval ? `Recorded: <b>${esc(a.approval.decision)}</b> ${a.approval.agreed ? "(agrees with the agent)" : "(overrides the agent)"} ${esc(a.approval.note)} · ${esc(a.approval.at)}` : "";
-  $("apDecision").value = dec?.proposed || "REFER";
-
-  renderRisk(rk, r);
-  renderIntegrity(r.integrity);
-
-  const c = r.coverage;
-  const bar = (label, k) => `<div class="bar"><span>${label}</span><span class="track"><i class="s" style="width:${k.seen_pct}%"></i><i class="g" style="width:${k.inspectable_pct}%"></i><i class="x" style="width:${k.inspected_pct}%"></i></span><span class="v">${k.inspected_pct}%</span></div>`;
-  $("covBars").innerHTML = bar("Overall", c.overall) + Object.entries(c.by_kind).map(([k, v]) => bar(k[0].toUpperCase() + k.slice(1), v)).join("")
-    + `<p class="small muted">Bars: seen · inspectable · <b>inspected</b> (number)</p>`;
-  $("gaps").innerHTML = (r.gaps || []).slice(0, 6).map((g) => `<li>${esc(g.label)}: ${g.length_m ? `${g.length_m} m of wall` : `${g.uncovered_m2} m² uncovered`}</li>`).join("") || "<li class='muted'>None</li>";
-  $("refilm").innerHTML = (a?.refilm || []).map((x) => `<li><b>${esc(x.surface)}</b>: ${esc(x.instruction)}</li>`).join("") || "<li class='muted'>None</li>";
-
-  renderFindings(name, base, r, a);
-
-  const walls = r.visuals?.walls || [];
-  $("walls").innerHTML = (r.visuals?.floor_plan ? `<figure><img src="${base}${r.visuals.floor_plan}" alt="Floor plan"><figcaption>Floor plan with the camera path and findings</figcaption></figure>` : "")
-    + walls.filter((w) => w.image).map((w) => `<figure><img src="${base}${esc(w.image)}" alt="Wall ${esc(w.id)}" loading="lazy"><figcaption>${esc(w.id)} · ${w.length_m} m${w.seen_pct != null ? ` · ${w.seen_pct}% seen` : ""}</figcaption></figure>`).join("");
-
-  $("trace").innerHTML = (a?.trace || []).map((s) => {
-    const cls = s.kind === "thought" ? "thought" : s.kind === "human" ? "human" : s.kind === "fallback" ? "fallback" : "";
-    const body = s.kind === "thought" ? esc(s.text)
-      : s.kind === "fallback" ? `Model unavailable, rule-based policy used: ${esc(s.error)}`
-      : `<span class="tool">${esc(s.tool)}</span> <span class="muted">${esc(JSON.stringify(s.input))}</span><pre>${esc(JSON.stringify(s.output, null, 1))}</pre>${s.image ? `<img src="${base}${esc(s.image)}" alt="view">` : ""}`;
-    return `<li><span class="n">${s.step}</span><div class="b ${cls}">${body}</div></li>`;
-  }).join("");
-
-  $("timings").innerHTML = Object.entries(r.timings_s).map(([k, v]) => `<tr><td>${esc(k)}</td><td>${v} s</td></tr>`).join("")
-    + `<tr><td><b>total</b></td><td><b>${Object.values(r.timings_s).reduce((x, y) => x + y, 0).toFixed(1)} s</b></td></tr>`;
-  $("evidence").innerHTML = `<p>OpenCV ${esc(r.opencv)} · ${r.frames} frames · quality: ${Object.entries(r.quality).map(([k, v]) => `${k} ${v}`).join(", ")}</p>
-    <p>Privacy: ${r.privacy.faces ?? 0} faces and ${r.privacy.text ?? r.privacy.text_regions ?? 0} text regions blurred before analysis</p>
-    <p>3D: ${r.fusion.points.toLocaleString()} surface points from ${r.fusion.frames} depth maps at ${r.fusion.voxel_m * 100} cm voxels</p>
-    ${(r.labels || []).length ? `<p>Labels read: ${r.labels.map((l) => l.lines.map((x) => esc(x.text)).join(" ")).join(" · ")}</p>` : ""}`;
-
-  showPoints(base, r, a?.findings || r.findings || []);
+function pickWalk() {
+  const f = $("walk-file").files[0];
+  $("walk-go").disabled = !f || !!watching;
+  $("walk-drop-text").textContent = f ? f.name : "Drop a video here or browse";
+  if (f) $("walk-drop").classList.add("has-file");
 }
 
-function renderRisk(rk, r) {
-  if (!rk) { $("riskTiles").innerHTML = ""; return; }
-  const cur = rk.repair_cost.currency;
-  const t = (label, value, note, cls = "") => `<div class="card kpi ${cls}"><span class="lbl">${label}</span><span class="big">${value}</span><span class="small muted">${note}</span></div>`;
-  $("riskTiles").innerHTML = [
-    t("Condition grade", `<span class="grade g${esc(rk.grade)}">${esc(rk.grade)}</span>`, `${esc(rk.grade_label)} · score ${rk.condition_score}`),
-    t("Risk level", esc(rk.risk_level), `premium loading ${rk.insurance.premium_loading_pct}%`),
-    t("Repair cost", `${money(rk.repair_cost.low, "")}–${money(rk.repair_cost.high, "")}`, `${esc(cur)}, indicative`),
-    t("Collateral risk", esc(rk.mortgage.collateral_risk), rk.mortgage.repair_retention ? `retain ${money(rk.mortgage.repair_retention, cur)}` : "no repair retention"),
-    t("Surface inspected", `${r.coverage.overall.inspected_pct}%`, rk.evidence.complete ? "enough evidence" : "below the 60% rule"),
-  ].join("");
-  $("underwriting").innerHTML = `Underwriting rules: <b>${esc(rk.decision)}</b>`;
-  $("reasons").innerHTML = rk.reasons.map((x) => `<li>${esc(x)}</li>`).join("") || "<li class='muted'>No rule fired.</li>";
-  $("perils").innerHTML = `<tr><th>Category</th><th>Insurance peril</th><th>Findings</th><th>Repair cost</th></tr>`
-    + (rk.insurance.perils.map((p) => `<tr><td>${esc(p.label)}</td><td>${esc(p.peril)}</td><td>${p.findings}</td><td>${money(p.repair_cost[0], "")}–${money(p.repair_cost[1], "")}</td></tr>`).join("")
-      || `<tr><td colspan="4" class="muted">No defects counted</td></tr>`);
-  const v = rk.valuation;
-  $("valuation").textContent = `Valuation impact ${v.impact_pct[0]}% to ${v.impact_pct[1]}% (${v.basis}). ${rk.disclaimer}`;
-}
-
-function renderIntegrity(ev) {
-  ev = ev || { level: "low", flags: [], checks: {} };
-  $("intLevel").innerHTML = `<span class="lvl ${esc(ev.level)}">${esc(ev.level)}</span>`;
-  $("intFlags").innerHTML = ev.flags.map((f) => `<li class="flag ${esc(f.level)}"><span class="lvl ${esc(f.level)}">${esc(f.level)}</span> ${esc(f.message)}</li>`).join("")
-    || `<li class="flag low"><span class="lvl low">ok</span> One continuous take, not seen before, no sign of a screen being filmed.</li>`;
-  const ch = ev.checks || {};
-  const row = (k, v) => `<tr><td>${k}</td><td>${v}</td></tr>`;
-  $("intChecks").innerHTML = [
-    row("Frames hashed", ch.frames ?? "–"), row("Matches with earlier walkthroughs", (ch.reused || []).length),
-    row("Hard cuts", (ch.hard_cuts || []).length), row("Frozen footage", `${ch.frozen_s ?? 0} s`),
-    row("Looped stretches", (ch.loops || []).length), row("Screen moiré (median score)", ch.moire_median ?? "–"),
-  ].join("");
-}
-
-function renderFindings(name, base, r, a) {
-  const fs = (a?.findings || r.findings || []).slice().sort((x, y) => ({ confirmed: 0, needs_review: 1, candidate: 2, dismissed: 3 }[x.status] - { confirmed: 0, needs_review: 1, candidate: 2, dismissed: 3 }[y.status]) || y.score - x.score);
-  const n = (s) => fs.filter((f) => f.status === s).length;
-  $("fCount").textContent = `${n("confirmed")} confirmed · ${n("needs_review")} for review · ${n("candidate")} not reviewed · ${n("dismissed")} dismissed`;
-  const why = {};
-  for (const x of r.rejected || []) {
-    const k = /in front|stands out|looks like/.test(x.reason) ? "on furniture or objects" : /door/.test(x.reason) ? "on doors" : /beyond/.test(x.reason) ? "seen through an opening" : "outside the room model";
-    why[k] = (why[k] || 0) + 1;
-  }
-  $("ruledOut").textContent = (r.rejected || []).length
-    ? `${r.rejected.length} candidates were ruled out before review using the 3D model and object recognition: ${Object.entries(why).map(([k, v]) => `${v} ${k}`).join(", ")}.` : "";
-  $("findings").innerHTML = fs.map((f) => {
-    const s = f.size || {};
-    const dims = [s.length_m ? `${s.length_m.toFixed(2)} m long` : "", f.kind === "crack" && s.width_mm ? `${s.width_mm.toFixed(1)} mm wide` : "", s.area_m2 ? `${s.area_m2.toFixed(2)} m²` : ""].filter(Boolean).join(" · ");
-    const open = f.status !== "confirmed" && f.status !== "dismissed";
-    return `<div class="finding ${esc(f.status)}">
-      <img src="${base}${esc(f.crop)}" alt="${esc(f.kind)} candidate" loading="lazy">
-      <div class="body"><span class="status ${esc(f.status)}">${esc(STATUS[f.status] || f.status)}${f.severity ? ` · ${esc(f.severity)}` : ""}</span>
-      <b>${esc(f.id)} · ${esc(KIND[f.defect || f.kind] || f.kind)}</b>
-      <span class="muted">${esc(f.surface || "")} ${esc(f.group || "")}${dims ? ` · ${dims}` : ""} · score ${f.score}</span>
-      ${f.evidence || f.reason ? `<span>${esc(f.evidence || f.reason)}</span>` : ""}
-      ${f.reviewed_by ? `<span class="small muted">reviewed by ${esc(f.reviewed_by)}</span>` : ""}
-      <div class="row review">${open ? `<select data-sev="${esc(f.id)}"><option>minor</option><option selected>moderate</option><option>major</option></select>
-        <button data-id="${esc(f.id)}" data-status="confirmed">Confirm</button><button class="ghost" data-id="${esc(f.id)}" data-status="dismissed">Dismiss</button>`
-        : `<button class="ghost" data-id="${esc(f.id)}" data-status="needs_review">Reopen</button>`}</div></div></div>`;
-  }).join("") || "<p class='muted'>No defects found on the inspected surfaces.</p>";
-  for (const b of $("findings").querySelectorAll("button[data-id]")) {
-    b.onclick = async () => {
-      b.disabled = true;
-      const sev = $("findings").querySelector(`select[data-sev="${b.dataset.id}"]`)?.value || "moderate";
-      await api(`/api/walkthroughs/${encodeURIComponent(name)}/findings/${encodeURIComponent(b.dataset.id)}`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: b.dataset.status, severity: sev }),
-      });
-      await open(name);
-    };
-  }
-}
-
-async function showPoints(base, r, findings) {
-  const el = $("viewer");
-  if (viewer) { viewer.dispose(); viewer = null; }
-  el.innerHTML = "";
-  let buf;
-  try { buf = await (await fetch(`${base}points.bin`, { cache: "no-store" })).arrayBuffer(); } catch { return; }
-  const n = new Uint32Array(buf, 0, 1)[0];
-  const pos = new Float32Array(buf, 4, n * 3);
-  const col = new Uint8Array(buf, 4 + n * 12, n * 3);
-  $("ptsInfo").textContent = `${n.toLocaleString()} points`;
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-  renderer.setSize(el.clientWidth, el.clientHeight);
-  el.appendChild(renderer.domElement);
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0e1211);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-  g.setAttribute("color", new THREE.BufferAttribute(col, 3, true));
-  // hide the ceiling so the room can be seen from above
-  const ceil = r.layout?.ceiling_height_m ?? 2.6;
-  const keep = [];
-  for (let i = 0; i < n; i++) if (pos[i * 3 + 1] < ceil - 0.25) keep.push(i);
-  g.setIndex(keep);
-  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 0.03, vertexColors: true })));
-  const traj = (r.trajectory || []).map((p) => new THREE.Vector3(p[0], p[1], p[2]));
-  if (traj.length > 1) scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(traj), new THREE.LineBasicMaterial({ color: 0x8be3d3 })));
-  for (const f of findings) {
-    if (!f.xyz || f.status === "dismissed") continue;
-    const m = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 12), new THREE.MeshBasicMaterial({ color: f.status === "confirmed" ? 0xef5b48 : 0xf3c04f }));
-    m.position.set(...f.xyz);
-    scene.add(m);
-  }
-  g.computeBoundingBox();
-  const c = g.boundingBox.getCenter(new THREE.Vector3());
-  const size = g.boundingBox.getSize(new THREE.Vector3()).length();
-  const cam = new THREE.PerspectiveCamera(50, el.clientWidth / el.clientHeight, 0.05, 100);
-  cam.position.set(c.x - size * 0.35, c.y + size * 0.75, c.z + size * 0.55);
-  const controls = new OrbitControls(cam, renderer.domElement);
-  controls.target.copy(c);
-  controls.update();
-  let raf = 0;
-  const loop = () => { controls.update(); renderer.render(scene, cam); raf = requestAnimationFrame(loop); };
-  loop();
-  viewer = { dispose: () => { cancelAnimationFrame(raf); renderer.dispose(); } };
-}
-
-// ---------------------------------------------------------------- actions and routing
-
-$("video").onchange = () => { $("fileName").textContent = $("video").files[0]?.name || "Choose a video"; };
-$("upload").onsubmit = async (e) => {
-  e.preventDefault();
-  const f = $("video").files[0];
-  if (!f) return;
-  $("go").disabled = true;
-  $("uploadMsg").textContent = "Uploading…";
-  try {
-    const fd = new FormData();
-    fd.append("video", f);
-    fd.append("property", $("property").value);
-    const res = await api("/api/walkthroughs", { method: "POST", body: fd });
-    $("uploadMsg").textContent = "Uploaded. Processing on the server.";
-    location.hash = encodeURIComponent(res.name);
-  } catch (err) {
-    $("uploadMsg").textContent = `Upload failed: ${err.message}`;
-  } finally {
-    $("go").disabled = false;
-  }
-};
-
-async function approve(useProposal) {
-  const data = await api(`/api/walkthroughs/${encodeURIComponent(current)}`);
-  const decision = useProposal ? data.agent?.decision?.proposed : $("apDecision").value;
-  await api(`/api/walkthroughs/${encodeURIComponent(current)}/approve`, {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ decision, note: $("apNote").value }),
+function setWalkStep(step) {
+  const idx = WALK_STEPS.indexOf(step);
+  document.querySelectorAll("#walk-steps li").forEach((li, i) => {
+    li.classList.toggle("done", i < idx); li.classList.toggle("active", i === idx);
   });
-  await open(current);
+  const li = $("walk-steps").querySelector(`[data-step="${step}"] .st`);
+  setStageText("walk", li ? li.firstChild.textContent : step);
 }
-$("apYes").onclick = () => approve(true);
-$("apOverride").onclick = () => approve(false);
-$("navInsp").onclick = async (e) => {
-  e.preventDefault();
-  const items = await api("/api/walkthroughs");
-  const first = items.find((w) => w.state === "done") || items[0];
-  if (first) location.hash = encodeURIComponent(first.name); else show("empty");
-};
 
-async function route() {
-  const h = decodeURIComponent(location.hash.slice(1));
-  if (!h || h === "dashboard") await dashboard();
-  else await open(h);
+// The current pipeline step from status.json (progress.key = engine / analysis / agent / viewer, progress.phase = the
+// stage text), else from the log lines.
+function walkStep(p, lines) {
+  const k = (p && p.key) || "", ph = (p && p.phase) || "";
+  if (/^(agent|viewer|done)$/.test(k)) return "render";
+  if (k === "analysis") return /defect|finding|label|rectif|agent/i.test(ph) ? "ai" : "coverage";
+  if (/^(engine|frames|tracking|levelling)$/.test(k)) return "slam";
+  const txt = lines.join("\n");
+  if (/viewer:|agent:|live map|GLB|finding pins/i.test(txt)) return "render";
+  if (/defects|Finding and placing|Reading labels|Rectifying/i.test(txt)) return "ai";
+  if (/analysis:|coverage|TSDF volume|Fitting walls/i.test(txt)) return "coverage";
+  return "slam";
 }
-window.addEventListener("hashchange", route);
-await health();
-await route();
+
+const cleanLine = (l) => l.replace(/\u001b\[[0-9;]*m/g, "").trim();
+const isNoise = (l) => !l || /triton|gsplat|Traceback|File "|^\s*\^|import triton|ModuleNotFoundError|warnings\.warn|it\/s\]|s\/it\]/i.test(l);
+
+function startWalkPanel(name, videoUrl) {
+  runState.walk = { t0: Date.now(), name, videoUrl: videoUrl || null, log: "starting…", prog: null, stageText: "" };
+  $("walk-go").disabled = true; $("walk-go").classList.add("busy");
+  setProgress("walk", 0, "Uploading video", 0, null);
+  if (panelOwner === "walk") paintOwner("walk");
+  placeRunning();
+  startClock();
+}
+
+function stopWalkPanel() {
+  watching = null; stopClockIfIdle();
+  $("walk-go").disabled = !$("walk-file").files.length; $("walk-go").classList.remove("busy");
+  runState.walk.prog = null;
+  if (panelOwner === "walk") $("run-vid").pause();
+  placeRunning();
+}
+
+function watchWalk(name, videoUrl) {
+  if (watching === name) return;
+  watching = name;
+  // No local copy of the video (page reloaded, other tab, started elsewhere): play the stored upload.
+  startWalkPanel(name, videoUrl || withKey(`${API}/walkthrough/${encodeURIComponent(name)}/video`));
+  setWalkStep("slam");
+  const view = `/walkthroughs/${name}/`;
+  let misses = 0, fails = 0;
+  const tick = async () => {
+    if (watching !== name) return;
+    let l;
+    try {
+      const r = await api(`/walkthrough/${name}/log`);
+      if (r.status === 404) {                       // status not written yet: job is still starting
+        if (++misses < 60) { setTimeout(tick, 3000); return; }
+        throw new Error("no progress log");
+      }
+      if (!r.ok) throw new Error(r.statusText);
+      l = await r.json();
+      fails = 0;
+    } catch (err) {                     // transient blip: retry; server gone: stop the animation
+      if (++fails < 4) { setTimeout(tick, 4000); return; }
+      stopWalkPanel(); $("walk-status").textContent = LOST; return;
+    }
+    const lines = (l.tail || []).map(cleanLine);
+    const useful = lines.filter((x) => !isNoise(x));
+    runState.walk.log = useful.slice(-6).join("\n") || "starting…";
+    if (panelOwner === "walk") $("run-log").textContent = runState.walk.log;
+    $("walk-status").innerHTML = `<span class="mini-spin"></span>${esc(name)}: ${esc(l.status)}`;
+    if (l.status === "queued") {                  // another walkthrough has the GPU: say so instead of a silent wait
+      const msg = queueText(l.queue || {});
+      setWalkStep("slam"); setStageText("walk", "Waiting for the GPU");
+      $("walk-status").innerHTML = `<span class="mini-spin"></span>${esc(name)}: ${esc(msg)}`;
+      const waited = (l.queue && l.queue.waiting_s) || 0;
+      runState.walk.t0 = Date.now() - waited * 1000;
+      setProgress("walk", 0, msg, waited, null);
+      setTimeout(tick, 4000); return;
+    }
+    if (l.status === "running") {
+      const p = l.progress;
+      setWalkStep(walkStep(p, lines));
+      if (p) {
+        runState.walk.t0 = Date.now() - p.elapsed_s * 1000;   // server clock: survives page reloads
+        setProgress("walk", p.percent, p.steps ? `Step ${p.step}/${p.steps}: ${p.phase}` : p.phase, p.elapsed_s,
+                    p.elapsed_s < 20 && !p.step ? null : p.eta_s);
+      }
+      setTimeout(tick, 4000); return;
+    }
+    if (l.progress) setProgress("walk", 100, "Done", l.progress.elapsed_s, 0);
+    stopWalkPanel(); walks();
+    if (l.status === "done") {
+      $("walk-status").innerHTML = `${esc(name)}: done — <a href="${esc(view)}" target="_blank" rel="noopener">` +
+        `<strong>Open results (3D model, live map, risk report) ↗</strong></a>`;
+      if (currentView === "walkthroughs") {
+        $("walk-status").innerHTML += " — opening…";
+        setTimeout(() => { location.href = view; }, 1500);   // a popup would be blocked after the long wait
+      } else toast(`Walkthrough <b>${esc(name)}</b> is ready — <a href="${esc(view)}">open 3D results</a>`, 20000);
+    } else if (l.status === "interrupted" || l.status === "failed") {
+      $("walk-status").innerHTML = (l.status === "interrupted"
+        ? `${esc(name)}: stopped before finishing (the server was restarted). `
+        : `${esc(name)}: failed — ${esc(useful.slice(-1)[0] || "")} `) +
+        `<a href="#" data-retry="${esc(name)}"><strong>Process it again</strong></a> (no re-upload needed).`;
+      $("walk-status").querySelector("[data-retry]").onclick = (e) => { e.preventDefault(); retryWalk(name); };
+    } else {
+      $("walk-status").textContent = l.status === "unknown"
+        ? `${name}: stopped before finishing (the server was restarted). Upload the video again.`
+        : `${name}: ${l.status} — ${useful.slice(-1)[0] || ""}`;
+    }
+  };
+  tick();
+}
+
+// "Waiting: another walkthrough is processing, started 7 min ago (about 4 min left)"
+function queueText(q) {
+  if (!q.running) return "Waiting for the GPU — starting shortly";
+  const el = q.running_elapsed_s || 0;
+  let s = `Waiting: another walkthrough is processing, started ${el < 60 ? "just now" : `${Math.round(el / 60)} min ago`}`;
+  if (q.running_eta_s > 0) s += ` (about ${Math.max(1, Math.round(q.running_eta_s / 60))} min left)`;
+  if (q.ahead > 1) s += ` · ${q.ahead - 1} more queued before yours`;
+  return s;
+}
+
+async function retryWalk(name) {
+  $("walk-status").innerHTML = `<span class="mini-spin"></span>Restarting ${esc(name)}…`;
+  try {
+    const r = await api(`/walkthrough/${encodeURIComponent(name)}/retry`, { method: "POST" });
+    let j = null; try { j = await r.json(); } catch { /* non-JSON body */ }
+    if (!r.ok && r.status !== 409) throw new Error(errText(r, j));
+    rememberWalk(name); watchWalk(name); go("#/walkthroughs");
+  } catch (err) { $("walk-status").textContent = "Failed: " + err.message; }
+}
+
+async function submitWalk(e) {
+  e.preventDefault();
+  const f = $("walk-file").files[0]; if (!f) return;
+  const fd = new FormData(); fd.append("video", f);
+  const prop = $("walk-property").value.trim();
+  if (prop) fd.append("property_id", prop);
+  const mode = (document.querySelector('input[name="walk-mode"]:checked') || {}).value || "advanced";
+  fd.append("mode", mode);
+  const videoUrl = URL.createObjectURL(f);
+  // the server names the walkthrough <file name>_<date-time>; this name is only shown while the video uploads
+  const name = (f.name.replace(/\.[^.]*$/, "").replace(/[^A-Za-z0-9_-]+/g, "_").slice(0, 40)) || "walkthrough";
+  watching = null;
+  startWalkPanel(name, videoUrl);
+  watching = "upload:" + name; placeRunning();
+  setWalkStep("upload");
+  $("walk-status").innerHTML = `<span class="mini-spin"></span>Uploading…`;
+  $("running").scrollIntoView({ behavior: "smooth", block: "start" });   // the progress card sits above the form
+  try {
+    const r = await api("/walkthrough", { method: "POST", body: fd });
+    let j = null; try { j = await r.json(); } catch { /* non-JSON body */ }
+    watching = null;
+    if (!r.ok) throw new Error(errText(r, j));
+    rememberWalk(j.name);
+    watchWalk(j.name, videoUrl);
+  } catch (err) { stopWalkPanel(); $("walk-status").textContent = "Failed: " + err.message; }
+}
+
+function showError(msg) { const e = $("error"); e.textContent = msg; e.hidden = false; }
+function hideError() { $("error").hidden = true; }
+init();

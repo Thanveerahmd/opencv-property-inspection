@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coverage coach</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='black'/%3E%3Cpath d='M8 15.5 16 9l8 6.5V24H8z' fill='none' stroke='%23f6f4ed' stroke-width='2.4' stroke-linejoin='round'/%3E%3Cpath d='m12.5 18.5 2.5 2.5 4.5-5' fill='none' stroke='%23f6f4ed' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<script>
+  (function () { try { var t = localStorage.getItem("pi_theme"); if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t); } catch (e) {} })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" media="print" onload="this.media='all'">
+<script type="importmap">
+  { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                 "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<style>
+  /* Same "Assay" ivory / black tokens as the console and the walkthrough page. */
+  :root {
+    --bg:#f6f4ed; --surface:#fcfbf7; --surface-2:#f1eee5; --surface-3:#e8e4d8; --border:#e0dbce; --border-strong:#c9c2b1;
+    --text:#1c1b17; --text-2:#4a4740; --text-3:#6b675c; --btn:#000; --btn-hover:#2b2a25; --on-btn:#f6f4ed;
+    --todo:#c8392f; --seen:#c08a1e; --good:#3c8a50; --plan:#2f5f8a; --stage:#dcd6c6;
+    --r-sm:10px; --r:12px; --focus:0 0 0 2px var(--bg), 0 0 0 4px var(--text); color-scheme:light;
+  }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+    --bg:#141310; --surface:#1b1a16; --surface-2:#22211c; --surface-3:#2c2a24; --border:#33312a; --border-strong:#48453b;
+    --text:#f1eee4; --text-2:#c9c4b6; --text-3:#9c9688; --btn:#f1eee4; --btn-hover:#fff; --on-btn:#000;
+    --todo:#e5675c; --seen:#dba63f; --good:#7cc08b; --plan:#7fb0dc; --stage:#0f0e0c; color-scheme:dark; } }
+  :root[data-theme="dark"] {
+    --bg:#141310; --surface:#1b1a16; --surface-2:#22211c; --surface-3:#2c2a24; --border:#33312a; --border-strong:#48453b;
+    --text:#f1eee4; --text-2:#c9c4b6; --text-3:#9c9688; --btn:#f1eee4; --btn-hover:#fff; --on-btn:#000;
+    --todo:#e5675c; --seen:#dba63f; --good:#7cc08b; --plan:#7fb0dc; --stage:#0f0e0c; color-scheme:dark; }
+
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--text); font:14px/1.5 "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+         -webkit-font-smoothing:antialiased; }
+  h1, h2 { margin:0; letter-spacing:-.01em; }
+  h2 { font-size:14px; font-weight:650; }
+  a { color:var(--text); }
+  :focus-visible { outline:none; box-shadow:var(--focus); border-radius:6px; }
+  .mono { font:12px ui-monospace, Consolas, monospace; font-variant-numeric:tabular-nums; }
+  button { display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid transparent; border-radius:var(--r-sm);
+           padding:7px 12px; background:var(--btn); color:var(--on-btn); font:inherit; font-weight:600; font-size:13px; line-height:20px;
+           cursor:pointer; white-space:nowrap; }
+  button:hover:not(:disabled) { background:var(--btn-hover); }
+  button:disabled { opacity:.5; cursor:default; }
+  button.ghost { background:var(--surface); color:var(--text); border-color:var(--border-strong); }
+  button.ghost:hover:not(:disabled) { background:var(--surface-2); }
+  button[aria-pressed="false"].rec { background:var(--surface); color:var(--text); border-color:var(--border-strong); }
+  .rec .dot { width:9px; height:9px; border-radius:50%; background:var(--todo); }
+  button[aria-pressed="true"].rec .dot { animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity:.3; } }
+  @media (prefers-reduced-motion: reduce) { button[aria-pressed="true"].rec .dot { animation:none; } }
+
+  header.top { position:sticky; top:0; z-index:20; background:var(--surface); border-bottom:1px solid var(--border); }
+  .top-in { max-width:1480px; margin:0 auto; padding:10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+            display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .top-in h1 { font-size:17px; font-weight:700; font-stretch:92%; }
+  .top-in .sub { color:var(--text-3); font-size:13px; }
+  .tabs { display:inline-flex; padding:3px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-sm); gap:2px; margin-left:auto; }
+  .tabs button { background:transparent; color:var(--text-2); padding:5px 12px; }
+  .tabs button[aria-selected="true"] { background:var(--surface); color:var(--text); box-shadow:0 1px 2px rgba(0,0,0,.08); }
+
+  main { max-width:1480px; margin:0 auto; padding:16px max(16px, env(safe-area-inset-right, 0px)) 40px max(16px, env(safe-area-inset-left, 0px));
+         display:grid; grid-template-columns:minmax(0, 1fr) 340px; gap:16px; align-items:start; }
+  @media (max-width: 980px) { main { grid-template-columns:minmax(0, 1fr); } }
+
+  .stage { display:flex; flex-direction:column; gap:10px; min-width:0; }
+  .phone { position:relative; width:100%; aspect-ratio:var(--ar, 16 / 9); background:var(--stage); border-radius:var(--r); overflow:hidden;
+           touch-action:none; user-select:none; cursor:grab; }
+  .phone:active { cursor:grabbing; }
+  .phone video, .phone canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+  .phone video { object-fit:fill; }
+  .hud { position:absolute; top:10px; left:10px; right:10px; display:flex; gap:6px; flex-wrap:wrap; pointer-events:none; }
+  .chip { background:rgba(0,0,0,.62); color:#fff; font:600 12px/18px "Archivo", system-ui, sans-serif; padding:3px 9px; border-radius:999px; }
+  .chip.live { background:var(--todo); }
+  .tip { position:absolute; left:10px; right:10px; bottom:10px; background:rgba(12,12,10,.78); color:#fff; border-radius:var(--r-sm);
+         padding:10px 14px; display:grid; grid-template-columns:auto minmax(0, 1fr); gap:2px 12px; align-items:center; pointer-events:none; }
+  .tip .ico { grid-row:1 / span 2; width:34px; height:34px; border-radius:50%; display:grid; place-items:center; background:rgba(255,255,255,.14); font-size:18px; }
+  .tip .ico.keep { background:var(--good); } .tip .ico.done { background:var(--good); }
+  .tip-main { font-size:17px; font-weight:700; line-height:1.25; }
+  .tip-sub { font-size:13px; color:#d8d4c8; }
+  .edge { position:absolute; display:grid; place-items:center; width:54px; height:54px; border-radius:50%; background:rgba(12,12,10,.7); color:#fff;
+          font-size:28px; pointer-events:none; }
+  .edge.l { left:12px; top:42%; } .edge.r { right:12px; top:42%; } .edge.u { top:46px; left:calc(50% - 27px); } .edge.d { bottom:96px; left:calc(50% - 27px); }
+  .msg { position:absolute; inset:0; display:grid; place-items:center; padding:24px; text-align:center; background:var(--stage); color:var(--text-2); }
+  .msg code { font:12px ui-monospace, Consolas, monospace; background:var(--surface-3); padding:2px 6px; border-radius:4px; }
+
+  .controls { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .controls input[type=range] { flex:1 1 220px; min-width:120px; accent-color:var(--text); }
+  .keys { color:var(--text-3); font-size:12px; }
+  .pad { display:none; gap:6px; flex-wrap:wrap; }
+  .pad button { min-width:44px; min-height:44px; font-size:18px; }
+  @media (pointer: coarse) { .pad { display:flex; } .keys { display:none; } }
+  .legend { display:flex; flex-wrap:wrap; gap:6px 16px; margin:0; color:var(--text-2); font-size:13px; }
+  .sw { display:inline-block; width:11px; height:11px; border-radius:3px; vertical-align:-1px; margin-right:6px; }
+
+  .side { display:flex; flex-direction:column; gap:12px; min-width:0; }
+  /* wide screens: the panel scrolls on its own, so the phone view never leaves the screen */
+  @media (min-width: 981px) {
+    .side { position:sticky; top:72px; max-height:calc(100vh - 88px); overflow-y:auto; overscroll-behavior:contain;
+            padding-right:2px; scrollbar-width:thin; }
+  }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:14px; display:flex; flex-direction:column; gap:10px; }
+  .card-h { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  .big { display:flex; align-items:baseline; gap:6px; }
+  .big #pct { font-size:40px; font-weight:750; font-stretch:85%; line-height:1; font-variant-numeric:tabular-nums; }
+  .big .unit { color:var(--text-2); font-weight:600; }
+  .bar { position:relative; height:12px; background:var(--surface-3); border-radius:6px; }
+  .bar .fill { position:absolute; inset:0 auto 0 0; width:0; border-radius:6px; background:var(--todo); transition:width .25s; }
+  .bar .fill.ok { background:var(--good); }
+  .bar .mark { position:absolute; top:-4px; bottom:-4px; width:2px; background:var(--text); }
+  .bar .mark span { position:absolute; top:-18px; left:-14px; font-size:11px; color:var(--text-2); white-space:nowrap; }
+  .kinds { display:grid; grid-template-columns:auto minmax(0, 1fr) 46px; gap:4px 10px; align-items:center; font-size:13px; }
+  .kinds .b { height:6px; background:var(--surface-3); border-radius:3px; overflow:hidden; }
+  .kinds .b i { display:block; height:100%; background:var(--good); }
+  .kinds .v { text-align:right; font-variant-numeric:tabular-nums; }
+  .fine { margin:0; color:var(--text-3); font-size:12px; }
+  .note { margin:0; color:var(--text-2); font-size:13px; }
+  .seg { display:inline-flex; border:1px solid var(--border-strong); border-radius:8px; overflow:hidden; }
+  .seg button { background:var(--surface); color:var(--text-2); border:0; border-radius:0; padding:3px 9px; font-size:12px; }
+  .seg button[aria-pressed="true"] { background:var(--btn); color:var(--on-btn); }
+  #plan { width:100%; height:auto; display:block; border-radius:8px; background:var(--surface-2); cursor:crosshair; }
+  ul.list, ol.list { margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; font-size:13px; }
+  ul.list li { display:flex; justify-content:space-between; gap:10px; }
+  ul.list li span:last-child { color:var(--text-2); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  ol.list li { display:grid; grid-template-columns:22px minmax(0, 1fr) auto; gap:8px; align-items:center; padding:6px 0; border-top:1px solid var(--border); }
+  ol.list li:first-child { border-top:0; }
+  ol.list .n { width:22px; height:22px; border-radius:50%; background:var(--plan); color:#fff; font-size:12px; font-weight:700; display:grid; place-items:center; }
+  ol.list li.next .n { outline:2px solid var(--text); outline-offset:1px; }
+  ol.list li.done { opacity:.5; }
+  ol.list .what { min-width:0; }
+  ol.list .what b { font-weight:600; }
+  ol.list .what div { color:var(--text-3); font-size:12px; }
+  ol.list button { padding:4px 10px; font-size:12px; }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="top-in">
+    <a id="back" href="/#/walkthroughs" aria-label="Back to the walkthrough">←</a>
+    <div>
+      <h1>Coverage coach</h1>
+      <div class="sub" id="sub">Loading…</div>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Mode">
+      <button role="tab" id="tab-replay" aria-selected="true" type="button">Replay the video</button>
+      <button role="tab" id="tab-sim" aria-selected="false" type="button">Try it yourself</button>
+    </div>
+    <button class="ghost" id="theme-btn" type="button" aria-label="Switch colour theme">◐</button>
+  </div>
+</header>
+
+<main>
+  <section class="stage">
+    <div class="phone" id="phone">
+      <video id="video" playsinline muted preload="auto"></video>
+      <canvas id="gl"></canvas>
+      <div class="hud"><span class="chip" id="mode-chip">Replay · measured coverage</span><span class="chip" id="time-chip"></span></div>
+      <div class="edge" id="arrow" hidden></div>
+      <div class="tip" id="tip"><div class="ico" id="tip-ico">…</div><div class="tip-main" id="tip-text">Loading the walkthrough…</div>
+        <div class="tip-sub" id="tip-detail"></div></div>
+      <div class="msg" id="msg" hidden></div>
+    </div>
+
+    <div class="controls" id="ctl-replay">
+      <button id="play" type="button">Play</button>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="Position in the video">
+      <span class="mono" id="tlabel"></span>
+      <button class="ghost" id="continue" type="button">Continue filming from here</button>
+    </div>
+    <div class="controls" id="ctl-sim" hidden>
+      <button class="rec" id="film" type="button" aria-pressed="true"><span class="dot"></span><span id="film-lbl">Filming</span></button>
+      <button class="ghost" id="next-spot" type="button" disabled>Go to the next planned spot</button>
+      <button class="ghost" id="reset" type="button">Start again from the end of the video</button>
+      <span class="keys">W A S D walk · ← → turn · ↑ ↓ tilt · drag the view to look · Space films on/off</span>
+      <div class="pad" aria-label="Move the phone">
+        <button class="ghost" data-k="fwd" type="button" aria-label="Walk forward">↑</button>
+        <button class="ghost" data-k="back" type="button" aria-label="Walk back">↓</button>
+        <button class="ghost" data-k="left" type="button" aria-label="Turn left">↺</button>
+        <button class="ghost" data-k="right" type="button" aria-label="Turn right">↻</button>
+        <button class="ghost" data-k="up" type="button" aria-label="Tilt up">⤒</button>
+        <button class="ghost" data-k="down" type="button" aria-label="Tilt down">⤓</button>
+      </div>
+    </div>
+    <p class="legend">
+      <span><i class="sw" style="background:var(--todo)"></i>still to film</span>
+      <span><i class="sw" style="background:var(--seen)"></i>seen, but too far (over 3 m) or at a sharp angle</span>
+      <span><i class="sw" style="background:var(--good)"></i>inspectable</span>
+      <span><i class="sw" style="background:var(--plan)"></i>planned spot</span>
+    </p>
+  </section>
+
+  <aside class="side">
+    <section class="card" aria-labelledby="h-cov">
+      <div class="card-h"><h2 id="h-cov">Inspectable surface</h2><span class="fine" id="pct-kind">measured</span></div>
+      <div class="big"><span id="pct">–</span><span class="unit">%</span></div>
+      <div class="bar" aria-hidden="true"><div class="fill" id="fill"></div><div class="mark" id="mark"><span id="mark-lbl"></span></div></div>
+      <p class="note" id="pct-note"></p>
+      <div class="kinds" id="kinds"></div>
+      <p class="fine" id="ai-note"></p>
+    </section>
+    <section class="card" aria-labelledby="h-plan">
+      <div class="card-h"><h2 id="h-plan">Floor plan</h2>
+        <div class="seg" role="group" aria-label="Plan layer">
+          <button type="button" id="lay-floor" aria-pressed="true">Floor</button><button type="button" id="lay-ceil" aria-pressed="false">Ceiling</button>
+        </div></div>
+      <canvas id="plan" width="620" height="480" aria-label="Floor plan with coverage, the phone and planned spots"></canvas>
+      <p class="fine">Walls are coloured along their length. Click the plan to stand there.</p>
+    </section>
+    <section class="card" aria-labelledby="h-gaps">
+      <h2 id="h-gaps">Still to film</h2>
+      <ul class="list" id="gaps"></ul>
+    </section>
+    <section class="card" aria-labelledby="h-route">
+      <div class="card-h"><h2 id="h-route">Route to the target</h2><button class="ghost" id="plan-btn" type="button">Plan the route</button></div>
+      <ol class="list" id="route"></ol>
+      <p class="fine" id="route-note">Predicts the fewest extra views that bring the inspectable surface past the target.</p>
+    </section>
+  </aside>
+</main>
+<script type="module" src="coach/app.js"></script>
+</body>
+</html>
