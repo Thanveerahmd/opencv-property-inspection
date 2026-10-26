@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spatially Aware Property Inspection</title>
+<link rel="stylesheet" href="/static/style.css">
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <span class="logo" aria-hidden="true"></span>
+    <div><h1>Spatially Aware Property Inspection</h1><p>Team XCore · OpenCV AI Competition 2026</p></div>
+  </div>
+  <div class="badges" id="badges"></div>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <form id="upload" class="card">
+      <h2>Inspect a walkthrough</h2>
+      <p class="muted small">A phone video of a room. OpenCV 5 tracks the camera, estimates depth, rebuilds the room in 3D,
+        measures coverage and looks for damage; then the agent decides what happens next.</p>
+      <label class="file"><input type="file" id="video" accept="video/*" required><span id="fileName">Choose a video</span></label>
+      <button type="submit" id="go">Analyse</button>
+      <p id="uploadMsg" class="small muted"></p>
+    </form>
+    <div class="card">
+      <h2>Walkthroughs</h2>
+      <ul id="list" class="list"></ul>
+    </div>
+  </aside>
+
+  <main id="main">
+    <div class="empty card" id="empty"><h2>Choose a walkthrough</h2><p class="muted">Or upload one to analyse.</p></div>
+    <div id="detail" hidden>
+      <section class="hero card">
+        <div>
+          <p class="eyebrow" id="dName"></p>
+          <h2 id="dDecision"></h2>
+          <p id="dSummary" class="lead"></p>
+          <p class="small muted" id="dEngine"></p>
+        </div>
+        <div class="approve" id="approveBox">
+          <h3>Human approval</h3>
+          <div id="approved" class="small"></div>
+          <div id="approveForm">
+            <select id="apDecision"><option>ACCEPT</option><option>REFER</option><option>REPAIR</option></select>
+            <input id="apNote" placeholder="Note (optional)">
+            <div class="row"><button id="apYes">Approve proposal</button><button id="apOverride" class="ghost">Override</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid2">
+        <div class="card">
+          <h3>Coverage</h3>
+          <div id="covBars"></div>
+          <p class="small muted">Inspectable: filmed within 3 m, at most 70° off straight-on, sharp frame. Inspected: in an analysed keyframe.
+            Below 60% inspected the decision must be REFER.</p>
+          <h4>Largest gaps</h4>
+          <ul id="gaps" class="list small"></ul>
+          <h4>Re-film requests sent by the agent</h4>
+          <ul id="refilm" class="list small"></ul>
+        </div>
+        <div class="card">
+          <h3>3D model <span class="muted small" id="ptsInfo"></span></h3>
+          <div id="viewer" class="viewer"></div>
+          <p class="small muted">Fused with OpenCV 5 <code>cv2.Volume</code> (hash TSDF). Drag to orbit. Dots: findings; line: camera path.</p>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>Findings</h3>
+        <div id="findings" class="findings"></div>
+      </section>
+
+      <section class="card">
+        <h3>Walls, rectified onto their planes</h3>
+        <div id="walls" class="walls"></div>
+      </section>
+
+      <section class="card">
+        <h3>Agent trace <span class="muted small">perception → decision → action</span></h3>
+        <ol id="trace" class="trace"></ol>
+      </section>
+
+      <section class="grid2">
+        <div class="card"><h3>Pipeline</h3><table id="timings" class="table"></table></div>
+        <div class="card"><h3>Evidence</h3><div id="evidence" class="small"></div></div>
+      </section>
+    </div>
+  </main>
+</div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
