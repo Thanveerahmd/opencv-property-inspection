@@ -22,11 +22,15 @@ filmed again, and proposes a decision that a person approves.
 | 3D fusion | `cv2.Volume` hash TSDF, `fetchPointsNormals`, `savePointCloud` | `fusion.py` |
 | Room layout | walls, floor and ceiling from fused points and normals | `layout.py` |
 | Coverage | 10 cm samples, `projectPoints`, depth occlusion, 3 m / 70° / sharp rule | `coverage.py` |
+| Evidence integrity | `img_hash.PHash` against earlier walkthroughs, `compareHist` hard cuts, frozen and looped frames, `dft` screen moiré, `findContours` bezels | `integrity.py` |
 | Defects | ridge filter, thinning, distance transform, Lab colour, morphology, contours; size in metres | `defects.py` |
+| Defect or object? | each candidate's ray cast onto the room planes and checked against depth (furniture, doors, openings); MobileNetV2 (`cv2.dnn`) for household objects | `localize.py`, `objects.py` |
 | Walls | plane homographies and `warpPerspective`: each wall rectified into one image | `ortho.py` |
 | Labels | DB text detection + CRNN recognition on rating plates | `ocr.py` |
+| Grade, risk, cost, decision | rules ported from the platform: condition grade A–E, risk level, insurance perils, repair cost, valuation, underwriting decision with reasons | `risk.py` |
 | Agent | Bedrock Converse with tool use; tools run the OpenCV stages above | `agent.py` |
-| Web endpoint | FastAPI: upload, results, 3D view, agent trace, human approval | `server.py`, `web/` |
+| Report | self-contained HTML (print to PDF), Markdown and JSON | `report.py` |
+| Web endpoint | FastAPI: dashboard, upload with live progress, results, 3D view, finding review, agent trace, human approval | `server.py`, `web/` |
 
 ## Run it
 

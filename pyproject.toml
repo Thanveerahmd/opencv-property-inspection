@@ -26,3 +26,5 @@ select = ["E", "F", "I", "B", "UP"]
 [tool.ruff.lint.per-file-ignores]
 # FastAPI declares request parameters with File(...) defaults
 "src/spatial_inspection/server.py" = ["B008"]
+# the report is an HTML template: its lines are markup, not code
+"src/spatial_inspection/report.py" = ["E501"]

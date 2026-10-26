@@ -13,6 +13,10 @@
     <span class="logo" aria-hidden="true"></span>
     <div><h1>Spatially Aware Property Inspection</h1><p>Team XCore · OpenCV AI Competition 2026</p></div>
   </div>
+  <nav class="tabs" aria-label="Views">
+    <a href="#dashboard" id="navDash">Dashboard</a>
+    <a href="#" id="navInsp">Inspections</a>
+  </nav>
   <div class="badges" id="badges"></div>
 </header>
 
@@ -21,7 +25,9 @@
     <form id="upload" class="card">
       <h2>Inspect a walkthrough</h2>
       <p class="muted small">A phone video of a room. OpenCV 5 tracks the camera, estimates depth, rebuilds the room in 3D,
-        measures coverage and looks for damage; then the agent decides what happens next.</p>
+        measures coverage, checks the evidence and looks for damage; then the agent decides what happens next.</p>
+      <label class="field"><span class="small muted">Property (address or reference)</span>
+        <input id="property" placeholder="e.g. 12 Lake Rd, Colombo 05" maxlength="120"></label>
       <label class="file"><input type="file" id="video" accept="video/*" required><span id="fileName">Choose a video</span></label>
       <button type="submit" id="go">Analyse</button>
       <p id="uploadMsg" class="small muted"></p>
@@ -33,7 +39,43 @@
   </aside>
 
   <main id="main">
-    <div class="empty card" id="empty"><h2>Choose a walkthrough</h2><p class="muted">Or upload one to analyse.</p></div>
+    <!-- dashboard: every inspection at a glance -->
+    <div id="dash" hidden>
+      <section class="kpis" id="kpis"></section>
+      <section class="grid2">
+        <div class="card">
+          <h3>Condition grades</h3>
+          <div id="gradeChart" class="gchart" role="img"></div>
+          <p class="small muted">A good · B fair · C below average · D poor · E very poor. From the rules-based risk engine.</p>
+        </div>
+        <div class="card">
+          <h3>Decisions and risk</h3>
+          <div id="dashSplit" class="split"></div>
+        </div>
+      </section>
+      <section class="card">
+        <h3>Inspections</h3>
+        <div class="tablewrap"><table class="table wide" id="dashTable"></table></div>
+      </section>
+    </div>
+
+    <!-- processing: live progress while the server works through the video -->
+    <div id="progress" hidden>
+      <section class="card scan">
+        <div class="scanview"><video id="pVideo" muted loop playsinline autoplay></video><span class="beam" aria-hidden="true"></span></div>
+        <div class="pbody">
+          <p class="eyebrow" id="pName"></p>
+          <h2 id="pStage">Starting</h2>
+          <div class="ptrack"><i id="pBar"></i></div>
+          <p class="small" id="pTimes"></p>
+          <ol id="pSteps" class="steps"></ol>
+          <p class="small muted">Walkthroughs are processed one at a time. This page updates by itself.</p>
+        </div>
+      </section>
+    </div>
+
+    <div class="empty card" id="empty" hidden><h2>Choose a walkthrough</h2><p class="muted">Or upload one to analyse.</p></div>
+
     <div id="detail" hidden>
       <section class="hero card">
         <div>
@@ -41,6 +83,7 @@
           <h2 id="dDecision"></h2>
           <p id="dSummary" class="lead"></p>
           <p class="small muted" id="dEngine"></p>
+          <div class="row exports" id="exports"></div>
         </div>
         <div class="approve" id="approveBox">
           <h3>Human approval</h3>
@@ -50,6 +93,25 @@
             <input id="apNote" placeholder="Note (optional)">
             <div class="row"><button id="apYes">Approve proposal</button><button id="apOverride" class="ghost">Override</button></div>
           </div>
+        </div>
+      </section>
+
+      <section class="tiles" id="riskTiles"></section>
+
+      <section class="grid2">
+        <div class="card">
+          <h3>Risk and valuation <span class="muted small">rules-based, auditable</span></h3>
+          <p class="small" id="underwriting"></p>
+          <ul id="reasons" class="list small bullets"></ul>
+          <div class="tablewrap"><table class="table" id="perils"></table></div>
+          <p class="small muted" id="valuation"></p>
+        </div>
+        <div class="card">
+          <h3>Evidence integrity <span class="muted small" id="intLevel"></span></h3>
+          <ul id="intFlags" class="list small flags"></ul>
+          <table class="table" id="intChecks"></table>
+          <p class="small muted">OpenCV: perceptual hashes (<code>img_hash.PHash</code>) against earlier walkthroughs, hard cuts
+            (<code>compareHist</code>), frozen or looped frames, screen moiré (<code>dft</code>) and bezels (<code>findContours</code>).</p>
         </div>
       </section>
 
@@ -67,12 +129,14 @@
         <div class="card">
           <h3>3D model <span class="muted small" id="ptsInfo"></span></h3>
           <div id="viewer" class="viewer"></div>
-          <p class="small muted">Fused with OpenCV 5 <code>cv2.Volume</code> (hash TSDF). Drag to orbit. Dots: findings; line: camera path.</p>
+          <p class="small muted">Fused with OpenCV 5 <code>cv2.Volume</code> (hash TSDF). Drag to orbit. Dots: findings (red confirmed,
+            amber for review); line: camera path.</p>
         </div>
       </section>
 
       <section class="card">
-        <h3>Findings</h3>
+        <h3>Findings <span class="muted small" id="fCount"></span></h3>
+        <p class="small muted" id="ruledOut"></p>
         <div id="findings" class="findings"></div>
       </section>
 
