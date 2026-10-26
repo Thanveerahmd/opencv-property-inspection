@@ -167,11 +167,14 @@ def detect_findings(w: Walkthrough, keyframes: list[int], samples, out: Path) ->
         from . import defects
     except ImportError:
         return [], []
+    from . import grounding
     from . import objects as _objects
     objects = _objects if _objects.available() else None
+    semantic = grounding.available()
     found, rejected = [], []
     for i in keyframes:
         f = w.frames[i]
+        things, damage = semantic_boxes(f.image) if semantic else ([], [])
         for c in defects.detect_all(f.image)[:6]:
             if c.score < 0.35:
                 continue
@@ -180,6 +183,11 @@ def detect_findings(w: Walkthrough, keyframes: list[int], samples, out: Path) ->
             if not where["on_surface"]:
                 rejected.append({"kind": c.kind, "score": round(float(c.score), 3), "frame": i, "bbox": [x, y, bw, bh],
                                  "reason": where["reason"]})
+                continue
+            on = next((t for t in things if _inside((x, y, bw, bh), t["box"]) >= 0.6), None)
+            if on is not None:
+                rejected.append({"kind": c.kind, "score": round(float(c.score), 3), "frame": i, "bbox": [x, y, bw, bh],
+                                 "reason": f"on a {on['label']} (Grounding DINO {on['score']:.2f}), not the wall"})
                 continue
             pad = int(0.25 * max(bw, bh)) + 12
             crop = f.image[max(0, y - pad): y + bh + pad, max(0, x - pad): x + bw + pad]
@@ -208,8 +216,45 @@ def detect_findings(w: Walkthrough, keyframes: list[int], samples, out: Path) ->
                 "features": {k: _json(v) for k, v in (c.features or {}).items()},
                 "size": size, "status": "candidate", "xyz": place["xyz"], "surface": place["surface"],
                 "group": place["group"], "depth_gap_m": place.get("depth_gap_m"),
+                "grounding": next(({"label": d["label"], "score": d["score"]} for d in damage
+                                   if _inside((x, y, bw, bh), d["box"]) >= 0.3
+                                   or _inside(_xywh(d["box"]), [x, y, x + bw, y + bh]) >= 0.5), None),
             })
+    if semantic:
+        grounding.release()
     return merge_repeats(found), rejected
+
+
+# Grounding DINO phrases: things a defect detector mistakes for damage, and the damage itself
+THINGS = ["chair", "sofa", "table", "cabinet", "shelf", "bed", "door", "picture frame", "painting", "clock", "fan",
+          "lamp", "curtain", "television", "plant", "mirror", "window", "air conditioner", "box", "bag", "pillow",
+          "light switch", "power socket", "wire", "pipe"]
+DAMAGE = ["crack", "water stain", "mold", "peeling paint", "rust", "hole"]
+
+
+def semantic_boxes(img: np.ndarray) -> tuple[list[dict], list[dict]]:
+    """Grounding DINO boxes on one keyframe: objects (big ones dropped: a box over most of the frame is not one
+    object in front of the wall) and visible damage."""
+    from . import grounding
+    rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    area = img.shape[0] * img.shape[1]
+    things = []
+    for k in range(0, len(THINGS), 13):
+        things += grounding.detect(rgb, THINGS[k:k + 13], box_threshold=0.35) or []
+    things = [t for t in things if (t["box"][2] - t["box"][0]) * (t["box"][3] - t["box"][1]) < 0.5 * area]
+    damage = grounding.detect(rgb, DAMAGE, box_threshold=0.3) or []
+    return things, damage
+
+
+def _xywh(box) -> tuple[float, float, float, float]:
+    return box[0], box[1], box[2] - box[0], box[3] - box[1]
+
+
+def _inside(b, box) -> float:
+    """Share of the x, y, w, h box `b` that lies inside the x0, y0, x1, y1 box."""
+    x, y, w, h = b
+    ix = max(0.0, min(x + w, box[2]) - max(x, box[0])) * max(0.0, min(y + h, box[3]) - max(y, box[1]))
+    return ix / max(w * h, 1e-6)
 
 
 def read_labels(w: Walkthrough, keyframes: list[int]) -> list[dict]:
