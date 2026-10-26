@@ -21,7 +21,7 @@ import numpy as np
 from . import coverage as cov_mod
 from .fusion import export_web_points, fuse
 from .layout import layout_from_points, manhattan_yaw, rotate_walkthrough
-from .localize import merge_repeats, pixel_to_world, snap
+from .localize import merge_repeats, place_on_surface
 from .scene import Walkthrough, load_platform_run
 
 
@@ -105,7 +105,7 @@ def run(w: Walkthrough, out: Path, max_keyframes: int = 16) -> dict:
     cov_mod.mark_inspected(cov, keyframes)
     tm.lap("coverage")
 
-    findings = detect_findings(w, keyframes, samples, out)
+    findings, rejected = detect_findings(w, keyframes, samples, out)
     tm.lap("defects")
 
     labels = read_labels(w, keyframes)
@@ -134,6 +134,7 @@ def run(w: Walkthrough, out: Path, max_keyframes: int = 16) -> dict:
         "keyframes": [{"frame": i, "t": round(w.frames[i].t, 2), "image": f"keyframes/kf_{i:04d}.jpg",
                        "contributes": cov_mod.sample_state_for_frame(cov, i)} for i in keyframes],
         "findings": findings,
+        "rejected": rejected,
         "labels": labels,
         "visuals": visuals,
         "trajectory": [w.frames[i].position.round(3).tolist() for i in range(len(w.frames)) if w.frames[i].c2w is not None],
@@ -145,28 +146,41 @@ def run(w: Walkthrough, out: Path, max_keyframes: int = 16) -> dict:
     return result
 
 
-def detect_findings(w: Walkthrough, keyframes: list[int], samples, out: Path) -> list[dict]:
+def detect_findings(w: Walkthrough, keyframes: list[int], samples, out: Path) -> tuple[list[dict], list[dict]]:
+    """Defect candidates on the keyframes that lie on the building's surfaces, and the ones ruled out (with why)."""
     try:
         from . import defects
     except ImportError:
-        return []
-    found = []
+        return [], []
+    from . import objects as _objects
+    objects = _objects if _objects.available() else None
+    found, rejected = [], []
     for i in keyframes:
         f = w.frames[i]
         for c in defects.detect_all(f.image)[:6]:
             if c.score < 0.35:
                 continue
             x, y, bw, bh = (int(v) for v in c.bbox)
-            xyz = pixel_to_world(f, x + bw / 2, y + bh / 2)
-            place = snap(samples, xyz) if xyz is not None else None
+            where = place_on_surface(f, (x, y, bw, bh), w.layout, samples, mask=c.mask)
+            if not where["on_surface"]:
+                rejected.append({"kind": c.kind, "score": round(float(c.score), 3), "frame": i, "bbox": [x, y, bw, bh],
+                                 "reason": where["reason"]})
+                continue
+            pad = int(0.25 * max(bw, bh)) + 12
+            crop = f.image[max(0, y - pad): y + bh + pad, max(0, x - pad): x + bw + pad]
+            obj = objects.household_object(crop) if objects is not None else None
+            if obj is not None:
+                rejected.append({"kind": c.kind, "score": round(float(c.score), 3), "frame": i, "bbox": [x, y, bw, bh],
+                                 "reason": f"looks like a {obj['object']} (MobileNetV2 {obj['p']:.2f}), not damage"})
+                continue
+            place = where["place"]
             size = {}
             try:
                 size = defects.measure(c, f.depth, f.K_depth, (f.image.shape[1], f.image.shape[0]))
+                size = {k: round(v, 3) if isinstance(v, float) else v for k, v in size.items()}
             except Exception as e:   # measurement is best effort; the finding still stands
                 size = {"error": str(e)}
             fid = f"F{len(found) + 1:03d}"
-            pad = int(0.25 * max(bw, bh)) + 12
-            crop = f.image[max(0, y - pad): y + bh + pad, max(0, x - pad): x + bw + pad]
             try:
                 from .enhance import enhance_for_review
                 crop = enhance_for_review(crop)
@@ -177,10 +191,10 @@ def detect_findings(w: Walkthrough, keyframes: list[int], samples, out: Path) ->
                 "id": fid, "kind": c.kind, "score": round(float(c.score), 3), "frame": i, "t": round(f.t, 2),
                 "bbox": [x, y, bw, bh], "crop": f"findings/{fid}.jpg",
                 "features": {k: _json(v) for k, v in (c.features or {}).items()},
-                "size": size, "status": "candidate",
-                **({"xyz": place["xyz"], "surface": place["surface"], "group": place["group"]} if place else {"xyz": None}),
+                "size": size, "status": "candidate", "xyz": place["xyz"], "surface": place["surface"],
+                "group": place["group"], "depth_gap_m": place.get("depth_gap_m"),
             })
-    return merge_repeats(found)
+    return merge_repeats(found), rejected
 
 
 def read_labels(w: Walkthrough, keyframes: list[int]) -> list[dict]:

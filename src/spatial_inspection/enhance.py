@@ -70,13 +70,13 @@ def enhance_for_review(img: np.ndarray, max_side: int = 1600) -> np.ndarray:
         return img
     stats = exposure_stats(img)
     big = img.shape[0] * img.shape[1] > max_side * max_side
-    out = cv2.bilateralFilter(img, 5, 25, 5) if big else denoise(img, 4.0 if stats["std"] > 20 else 6.0)
-    # flat or dark crops need a stronger push to show surface detail
-    clip = 3.0 if stats["std"] < 25 or stats["mean"] < 70 else 2.0
-    tiles = max(2, min(8, min(img.shape[:2]) // 64))
+    if big:
+        out = cv2.bilateralFilter(img, 5, 25, 5)
+    else:   # a very flat crop's faint detail is the evidence: denoising would erase it
+        out = img if stats["std"] < 10 else denoise(img, 4.0 if stats["std"] > 20 else 6.0)
+    # flat or dark crops need a stronger push to show surface detail; kept gentle, because video frames carry
+    # compression blocks that strong CLAHE or detailEnhance turn into contour bands that look like damage
+    clip = 2.5 if stats["std"] < 10 else 1.8 if stats["std"] < 25 or stats["mean"] < 70 else 1.4
+    tiles = max(2, min(4, min(img.shape[:2]) // 96))
     out = clahe_lab(out, clip, tiles)
-    if img.ndim == 3:
-        out = detail(out, 8.0, 0.12)
-    else:
-        out = sharpen(out, 0.5)
-    return out
+    return sharpen(out, 0.3)

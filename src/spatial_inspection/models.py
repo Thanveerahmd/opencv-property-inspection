@@ -51,6 +51,13 @@ REGISTRY: dict[str, ModelFile] = {
         "a84b1f6e11a65c2d733cb0cc1f014aae3f99051e3f11447dc282faa678eee544",
         "Apache-2.0",
     ),
+    # OpenCV Zoo, MobileNetV2 ImageNet classifier (cv2.dnn): tells household objects apart from damage
+    "image_classification_mobilenet": ModelFile(
+        "opencv/image_classification_mobilenetv2_2022apr.onnx",
+        f"{ZOO}/image_classification_mobilenet/image_classification_mobilenetv2_2022apr.onnx",
+        "c0c3f76d93fa3fd6580652a45618618a220fced18babf65774ed169de0432ad5",
+        "Apache-2.0",
+    ),
     # Depth Anything V2 Small, ONNX export from onnx-community (monocular relative depth)
     "depth_anything_v2_small": ModelFile(
         "opencv/depth_anything_v2_small.onnx",
