@@ -1,0 +1,24 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+# keys, data and model weights stay out of git
+.env
+.env.*
+data/
+models/
+*.mp4
+*.mov
+*.ply
+*.splat
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+*.gguf
+.DS_Store
+Thumbs.db

@@ -1,0 +1,24 @@
+[project]
+name = "spatial-inspection"
+version = "0.1.0"
+description = "Spatially aware property inspection: damage detection, OpenCV 5 camera tracking, 3D reconstruction"
+requires-python = ">=3.11"
+
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
