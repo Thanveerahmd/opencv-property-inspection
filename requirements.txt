@@ -1,3 +1,7 @@
 # Runtime. OpenCV 5 with the contrib modules, headless (servers and CI have no display).
 opencv-contrib-python-headless==5.0.0.93
 numpy==2.2.6
+boto3==1.40.64
+fastapi==0.120.4
+uvicorn==0.38.0
+python-multipart==0.0.20

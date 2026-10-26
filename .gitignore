@@ -22,3 +22,5 @@ models/
 *.gguf
 .DS_Store
 Thumbs.db
+results/
+uploads/

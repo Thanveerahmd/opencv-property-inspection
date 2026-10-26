@@ -17,8 +17,12 @@ pythonpath = ["src"]
 addopts = "-q"
 
 [tool.ruff]
-line-length = 120
+line-length = 132
 target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+# FastAPI declares request parameters with File(...) defaults
+"src/spatial_inspection/server.py" = ["B008"]
