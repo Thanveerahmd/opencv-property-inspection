@@ -9,8 +9,8 @@ dist/
 # keys, data and model weights stay out of git
 .env
 .env.*
-data/
-models/
+/data/
+/models/
 *.mp4
 *.mov
 *.ply
@@ -22,5 +22,5 @@ models/
 *.gguf
 .DS_Store
 Thumbs.db
-results/
-uploads/
+/results/
+/uploads/
