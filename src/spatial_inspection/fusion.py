@@ -62,7 +62,7 @@ def colorize(w: Walkthrough, pts: np.ndarray, nrm: np.ndarray, max_frames: int =
     cols = np.full((len(pts), 3), 128, np.uint8)
     best = np.full(len(pts), -np.inf)
     frames = [f for f in w.frames if f.image is not None and f.c2w is not None]
-    if not frames:
+    if not frames or len(pts) == 0:      # OpenCV 5 projectPoints returns None for no points
         return cols
     step = max(1, len(frames) // max_frames)
     for f in frames[::step]:

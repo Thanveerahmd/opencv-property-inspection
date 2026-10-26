@@ -60,8 +60,13 @@ def wall_position(v: np.ndarray, c: np.ndarray, y: np.ndarray, outward: int) -> 
     return None
 
 
-def layout_from_points(fused: Fused, floor_y: float = 0.0) -> dict:
-    """A one-room box layout in the platform's format. The model frame must already be wall-aligned."""
+def layout_from_points(fused: Fused, floor_y: float = 0.0, cameras: np.ndarray | None = None,
+                       clearance: float = 0.15) -> dict:
+    """A one-room box layout in the platform's format. The model frame must already be wall-aligned.
+
+    `cameras` (N x 3 camera positions) constrains the fit: the room must contain the path it was filmed from, so each
+    wall is looked for only beyond the path on its own side. Walls that still cannot be found fall back to the extent
+    of the points, and the layout's `confidence` says so."""
     p, n = fused.points, fused.normals
     down = (n[:, 1] < -0.85) & (p[:, 1] > floor_y + 1.6)
     ceil = float(np.percentile(p[down, 1], 85)) if down.sum() > 50 else floor_y + 2.6
@@ -71,11 +76,21 @@ def layout_from_points(fused: Fused, floor_y: float = 0.0) -> dict:
         ("x", 1): horiz & (n[:, 0] > 0.8), ("x", -1): horiz & (n[:, 0] < -0.8),
         ("z", 1): horiz & (n[:, 2] > 0.8), ("z", -1): horiz & (n[:, 2] < -0.8),
     }
-    off = {}
+    cam_lo = cam_hi = None
+    if cameras is not None and len(cameras):
+        cam_lo, cam_hi = cameras[:, [0, 2]].min(axis=0), cameras[:, [0, 2]].max(axis=0)
+    off, fell_back = {}, []
     for (axis, sign), m in sets.items():
         a, b = (0, 2) if axis == "x" else (2, 0)
+        j = 0 if axis == "x" else 1
+        if cam_lo is not None:   # a wall facing +axis bounds the room from below, so it lies below the whole path
+            m = m & ((p[:, a] < cam_lo[j] - clearance) if sign == 1 else (p[:, a] > cam_hi[j] + clearance))
         v = wall_position(p[m, a], p[m, b], p[m, 1], -sign)
-        fallback = lo[0 if axis == "x" else 1] if sign == 1 else hi[0 if axis == "x" else 1]
+        fallback = lo[j] if sign == 1 else hi[j]
+        if cam_lo is not None:
+            fallback = min(fallback, cam_lo[j] - clearance) if sign == 1 else max(fallback, cam_hi[j] + clearance)
+        if v is None:
+            fell_back.append(f"{axis}{'+' if sign == 1 else '-'}")
         off[(axis, sign)] = fallback if v is None else v
     x0, x1, z0, z1 = off[("x", 1)], off[("x", -1)], off[("z", 1)], off[("z", -1)]
     walls = [
@@ -91,6 +106,8 @@ def layout_from_points(fused: Fused, floor_y: float = 0.0) -> dict:
     return {
         "units": "metres, model frame (x right, y up, z back, floor y = 0)",
         "source": "opencv-points",
+        "confidence": "high" if not fell_back else "medium" if len(fell_back) == 1 else "low",
+        "walls_not_found": fell_back,
         "ceiling_height_m": round(ceil - floor_y, 3),
         "walls": walls,
         "rooms": [{"id": "room_0", "name": "Room", "bbox_m": [round(float(min(x0, x1)), 3), round(float(min(z0, z1)), 3),

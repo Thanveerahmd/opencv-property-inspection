@@ -90,7 +90,8 @@ def main() -> None:
         w = load_platform_run(slam, video, name)
         platform_layout = w.layout
         w.load_images()
-        fitted = layout_from_points(fuse(w, voxel=0.05))
+        cams = np.array([f.c2w[:3, 3] for f in w.frames if f.c2w is not None])
+        fitted = layout_from_points(fuse(w, voxel=0.05), cameras=cams)
         r = run(w, Path("results") / name)
         ag = run_agent(r, Path("results") / name, w)
         tools = [s.get("tool") for s in ag["trace"] if s["kind"] == "tool"]

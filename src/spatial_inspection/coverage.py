@@ -202,6 +202,10 @@ def compute_coverage(w: Walkthrough, samples: Samples, max_range: float = 6.0, g
         w2c = np.linalg.inv(f.c2w)
         z = X @ w2c[2, :3] + w2c[2, 3]
         front = np.where(z > 0.2)[0]
+        if len(front) == 0:      # facing away from every surface sample (OpenCV 5 projectPoints returns None then)
+            good_by_frame.append(np.zeros(0, int))
+            seen_by_frame.append(np.zeros(0, int))
+            continue
         h, wd = f.depth.shape
         rvec, _ = cv2.Rodrigues(w2c[:3, :3])
         uv, _ = cv2.projectPoints(X[front], rvec, w2c[:3, 3], f.K_depth, None)
