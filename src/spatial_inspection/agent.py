@@ -21,6 +21,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from . import risk
 from .scene import Walkthrough
 
 MIN_INSPECTED_PCT = 60.0   # the inspection platform's rule: below this, refer for more evidence
@@ -29,16 +30,21 @@ SYSTEM = """You are a property inspection agent. A phone walkthrough video of a 
 the room was reconstructed in 3D, surface coverage measured (a surface counts as inspectable when filmed within 3 m,
 at most 70 degrees off straight-on, in a sharp frame) and defect candidates proposed by classical computer vision.
 
+Candidates on furniture, doors, fittings or seen through openings were already ruled out with 3D geometry.
+
 Work through it like a careful inspector, using the tools:
 1. Check coverage first. The rule: below 60% of the surface inspected, the decision must be REFER, and you must
    request re-filming of the largest gaps with a clear, specific instruction for the person filming.
-2. Look at every candidate before deciding on it. If a crop is unclear, too far or blurred, call find_better_view
-   and judge the new view. Confirm only defects you can see; dismiss false positives (shadows, grout lines,
-   wallpaper patterns, reflections) with a reason.
-3. Measure confirmed defects and rate severity: minor, moderate or major.
-4. If a label or rating plate is visible, read it.
-5. Finish with request_human_approval: decision ACCEPT (no significant defects, enough coverage), REFER (not enough
-   evidence) or REPAIR (confirmed defects need work), with a short summary. A person makes the final call.
+2. Check evidence integrity (reused footage, edits, loops, a screen being filmed). A high flag means REFER.
+3. Look at every candidate before deciding on it. If a crop is unclear, too far or blurred, call find_better_view
+   and judge the new view. Confirm only defects you can clearly see; dismiss false positives (shadows, grout lines,
+   wallpaper patterns, reflections, objects) with a reason; flag_for_review what you cannot settle.
+4. Measure confirmed defects and rate severity: minor, moderate or major.
+5. If a label or rating plate is visible, read it.
+6. Call assess_risk for the condition grade, risk level, repair cost and the rules-based underwriting decision.
+7. Finish with request_human_approval: decision ACCEPT (no significant defects, enough coverage), REFER (not enough
+   or not trustworthy evidence) or REPAIR (confirmed defects need work), with a short summary. A person makes the
+   final call.
 Be concise. Never invent measurements; use what the tools return."""
 
 TOOLS = [
@@ -59,6 +65,13 @@ TOOLS = [
      "input": {"finding_id": "string", "defect": "string", "severity": "string", "evidence": "string"}},
     {"name": "dismiss_finding", "description": "Reject a candidate as not a defect.",
      "input": {"finding_id": "string", "reason": "string"}},
+    {"name": "flag_for_review", "description": "Leave a candidate for a person to judge, saying what is unclear.",
+     "input": {"finding_id": "string", "reason": "string"}},
+    {"name": "check_integrity", "description": "OpenCV evidence-integrity checks: footage reused from another "
+     "walkthrough (perceptual hashes), hard cuts, frozen or looped frames, a screen being filmed (moire, bezel).",
+     "input": {}},
+    {"name": "assess_risk", "description": "Rules-based condition score and grade (A-E), risk level, insurance perils, "
+     "repair-cost range, valuation impact and underwriting decision from the findings as they stand now.", "input": {}},
     {"name": "request_refilm", "description": "Ask the person filming to capture part of the room again. Sent to the "
      "capture app as an instruction.", "input": {"surface": "string", "instruction": "string", "reason": "string"}},
     {"name": "request_human_approval", "description": "Finish: propose the decision (ACCEPT, REFER or REPAIR) with a "
@@ -173,6 +186,23 @@ class Tools:
         f.update(status="dismissed", reason=reason)
         return {"ok": True}, None
 
+    def flag_for_review(self, finding_id: str, reason: str) -> tuple[dict, bytes | None]:
+        f = self.findings.get(finding_id)
+        if f is None:
+            return {"error": f"no candidate {finding_id}"}, None
+        f.update(status="needs_review", reason=reason)
+        return {"ok": True}, None
+
+    def check_integrity(self) -> tuple[dict, bytes | None]:
+        ev = self.r.get("integrity") or {}
+        return {"level": ev.get("level", "unknown"), "flags": ev.get("flags", []),
+                "checks": {k: v for k, v in (ev.get("checks") or {}).items() if k != "reused"}}, None
+
+    def assess_risk(self) -> tuple[dict, bytes | None]:
+        a = risk.assess_result(list(self.findings.values()), self.r)
+        return {k: a[k] for k in ("condition_score", "grade", "grade_label", "risk_level", "decision", "action",
+                                  "reasons", "repair_cost")}, None
+
     def request_refilm(self, surface: str, instruction: str, reason: str) -> tuple[dict, bytes | None]:
         self.refilm.append({"surface": surface, "instruction": instruction, "reason": reason, "state": "sent"})
         return {"ok": True, "queued": len(self.refilm)}, None
@@ -282,35 +312,44 @@ def run_policy(tools: Tools, trace: Trace) -> None:
             args = {"surface": g["surface"], "instruction": instr, "reason": f"{g['label']} not inspectable"}
             out, _ = tools.request_refilm(**args)
             trace.add("tool", tool="request_refilm", input=args, output=out)
+    integ, _ = tools.check_integrity()
+    trace.add("tool", tool="check_integrity", input={}, output=_brief(integ))
     cands, _ = tools.list_candidates()
     trace.add("tool", tool="list_candidates", input={}, output={"count": len(cands["candidates"])})
-    confirmed = 0
+    confirmed = review = 0
     for c in sorted(cands["candidates"], key=lambda x: -x["score"])[:8]:
         look, _ = tools.look_at(c["id"])
         trace.add("tool", tool="look_at", input={"finding_id": c["id"]}, output=_brief(look))
-        score = c["score"]
-        if look.get("sharpness", 0) < 60 or score < 0.6:
-            better, _ = tools.find_better_view(c["id"])
-            trace.add("tool", tool="find_better_view", input={"finding_id": c["id"]}, output=_brief(better),
-                      image=better.get("image"))
-            same = [r["score"] for r in better.get("redetected", []) if r["kind"] == c["kind"]]
-            if same:
-                score = max(score, max(same))
-            elif "frame" in better:
-                score *= 0.6     # a closer view that no longer shows it lowers confidence
-        if score >= 0.6:
-            sev = "major" if score > 0.85 else "moderate" if score > 0.7 else "minor"
-            args = {"finding_id": c["id"], "defect": c["kind"], "severity": sev,
-                    "evidence": f"OpenCV score {score:.2f} after review"}
-            out, _ = tools.confirm_finding(**args)
-            confirmed += 1
+        score, corroborated = c["score"], False
+        better, _ = tools.find_better_view(c["id"])
+        trace.add("tool", tool="find_better_view", input={"finding_id": c["id"]}, output=_brief(better),
+                  image=better.get("image"))
+        same = [r["score"] for r in better.get("redetected", []) if r["kind"] == c["kind"]]
+        if same:
+            score, corroborated = max(score, max(same)), True
+        elif "frame" in better:
+            score *= 0.6     # a closer view that no longer shows it lowers confidence
+        # the policy cannot look at images, and classical detectors cannot tell every object from damage, so it never
+        # confirms on its own: evidence worth a look goes to a person (or to the model on Bedrock), weak evidence is
+        # dismissed
+        if score >= 0.45:
+            why = (f"seen again in frame {better.get('frame')} (score {score:.2f})" if corroborated
+                   else "not seen again from another view")
+            args = {"finding_id": c["id"], "reason": f"possible {c['kind']}: {why}"}
+            tool, (out, _) = "flag_for_review", tools.flag_for_review(**args)
+            review += 1
         else:
             args = {"finding_id": c["id"], "reason": f"weak evidence (score {score:.2f})"}
-            out, _ = tools.dismiss_finding(**args)
-        trace.add("tool", tool="confirm_finding" if score >= 0.6 else "dismiss_finding", input=args, output=out)
-    decision = "REFER" if inspected < MIN_INSPECTED_PCT else "REPAIR" if confirmed else "ACCEPT"
-    summary = (f"{inspected}% inspected; {confirmed} defect(s) confirmed; "
-               f"{len(tools.refilm)} re-film request(s) sent.")
+            tool, (out, _) = "dismiss_finding", tools.dismiss_finding(**args)
+        trace.add("tool", tool=tool, input=args, output=out)
+    assessed, _ = tools.assess_risk()
+    trace.add("tool", tool="assess_risk", input={}, output=_brief(assessed))
+    decision = assessed["action"]
+    if inspected < MIN_INSPECTED_PCT or integ.get("level") == "high":
+        decision = "REFER"
+    summary = (f"{inspected}% inspected; grade {assessed['grade']} ({assessed['condition_score']}); "
+               f"{confirmed} defect(s) confirmed, {review} for review; {len(tools.refilm)} re-film request(s); "
+               f"integrity {integ.get('level', 'unknown')}. {assessed['decision']}.")
     out, _ = tools.request_human_approval(decision, summary)
     trace.add("tool", tool="request_human_approval", input={"decision": decision, "summary": summary}, output=out)
 
@@ -335,9 +374,10 @@ def run_agent(result: dict, out: Path, w: Walkthrough | None = None, prefer: str
             trace.add("fallback", error="model stopped without a decision")
         run_policy(tools, trace)
         engine = engine if engine != "policy" else "policy"
-    agent = {"engine": engine, "decision": tools.decision, "refilm": tools.refilm,
-             "findings": list(tools.findings.values()), "trace": trace.steps,
-             "seconds": round(time.time() - trace.started, 1)}
+    findings = list(tools.findings.values())
+    assessment = risk.assess_result(findings, result)
+    agent = {"engine": engine, "decision": tools.decision, "refilm": tools.refilm, "risk": assessment,
+             "findings": findings, "trace": trace.steps, "seconds": round(time.time() - trace.started, 1)}
     (Path(out) / "agent.json").write_text(json.dumps(agent, indent=1, default=str), encoding="utf-8")
     return agent
 

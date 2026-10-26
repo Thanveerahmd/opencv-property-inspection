@@ -24,15 +24,20 @@ from .layout import layout_from_points, manhattan_yaw, rotate_walkthrough
 from .localize import merge_repeats, place_on_surface
 from .scene import Walkthrough, load_platform_run
 
+STAGES = ["quality", "integrity", "privacy", "fusion", "layout", "coverage", "defects", "labels", "visuals"]
+
 
 class Timer:
-    def __init__(self):
+    def __init__(self, progress=None):
         self.stages: dict[str, float] = {}
         self._t = time.perf_counter()
+        self.progress = progress     # progress(stage_done, fraction_of_pipeline_done)
 
     def lap(self, name: str) -> None:
         now = time.perf_counter()
         self.stages[name] = round(now - self._t, 2)
+        if self.progress is not None and name in STAGES:
+            self.progress(name, (STAGES.index(name) + 1) / len(STAGES))
         self._t = now
 
 
@@ -66,14 +71,21 @@ def quality_gate(w: Walkthrough) -> None:
                           "verdict": f.quality.get("verdict", verdict)})
 
 
-def run(w: Walkthrough, out: Path, max_keyframes: int = 16) -> dict:
+def run(w: Walkthrough, out: Path, max_keyframes: int = 16, prop: str | None = None, progress=None) -> dict:
+    """`prop` names the property the walkthrough was submitted for (used by the reused-footage check);
+    `progress(stage, fraction)` is called as each stage finishes."""
     out = Path(out)
     (out / "keyframes").mkdir(parents=True, exist_ok=True)
     (out / "findings").mkdir(exist_ok=True)
-    tm = Timer()
+    tm = Timer(progress)
     w.load_images()
     quality_gate(w)
     tm.lap("quality")
+
+    # integrity on the frames as filmed: one continuous take, not reused, not a screen being filmed
+    from . import integrity
+    evidence = integrity.check(w, root=out.parent, prop=prop)
+    tm.lap("integrity")
 
     # privacy first: nothing leaves this stage with a face or private text in it
     privacy = {"faces": 0, "text_regions": 0}
@@ -94,7 +106,8 @@ def run(w: Walkthrough, out: Path, max_keyframes: int = 16) -> dict:
         T = rotate_walkthrough(w, yaw)
         fused.points = fused.points @ T[:3, :3].T
         fused.normals = fused.normals @ T[:3, :3].T
-        w.layout = layout_from_points(fused)
+        cams = np.array([f.c2w[:3, 3] for f in w.frames if f.c2w is not None])
+        w.layout = layout_from_points(fused, cameras=cams)
     n_points = export_web_points(out / "points.bin", fused)
     tm.lap("layout")
 
@@ -124,7 +137,9 @@ def run(w: Walkthrough, out: Path, max_keyframes: int = 16) -> dict:
         "frames": len(w.frames),
         "fps": w.fps,
         "image_size": list(w.size),
+        "property": prop,
         "quality": summarise_quality(w),
+        "integrity": evidence,
         "privacy": privacy,
         "fusion": {"points": int(len(fused.points)), "web_points": n_points, "voxel_m": fused.voxel,
                    "frames": fused.frames_used},
@@ -268,6 +283,7 @@ def main() -> None:
     ap.add_argument("--out", required=True)
     ap.add_argument("--platform-cache", help="the inspection platform's 3D-engine output folder for this video")
     ap.add_argument("--name")
+    ap.add_argument("--property", help="the property this walkthrough was submitted for (address or reference)")
     ap.add_argument("--fps", type=float, default=10.0)
     ap.add_argument("--agent", action="store_true", help="run the inspection agent on the result")
     a = ap.parse_args()
@@ -278,7 +294,7 @@ def main() -> None:
         w = process_video(a.video, fps=a.fps)
         if a.name:
             w.name = a.name
-    r = run(w, Path(a.out))
+    r = run(w, Path(a.out), prop=a.property)
     print(json.dumps({"name": r["name"], "coverage": r["coverage"]["overall"], "findings": len(r["findings"]),
                       "timings_s": r["timings_s"]}, indent=1))
     if a.agent:
