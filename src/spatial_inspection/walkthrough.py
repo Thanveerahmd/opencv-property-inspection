@@ -413,9 +413,14 @@ def build_viewer(name: str, video: Path, slam_dir: Path, out: Path, w, result: d
     by_reason: dict[str, int] = {}
     for r in rej:
         why = r.get("reason", "")
-        key = ("furniture or an object in front of the wall" if "in front of" in why or "stands out" in why or "looks like" in why
-               or "Grounding DINO" in why else "a door" if "door" in why else "seen through an opening" if "beyond" in why
-               else "outside the room model" if "outside" in why else why)
+        if any(s in why for s in ("in front of", "stands out", "looks like", "Grounding DINO")):
+            key = "furniture or an object in front of the wall"
+        elif "door" in why or "window" in why:
+            key = "a door or window"
+        elif "beyond" in why:
+            key = "seen through an opening"
+        else:
+            key = "outside the room model" if "outside" in why else why
         by_reason[key] = by_reason.get(key, 0) + 1
     dismissed = [f for f in findings if f["state"] == "DISMISSED"]
     if dismissed:
@@ -547,6 +552,38 @@ def build(video: Path, name: str, out: Path, prop: str | None = None, mode: str 
     return W
 
 
+class Status:
+    """results/<name>/status.json as the web app writes it, so a run started here shows on the dashboard with its
+    progress (shares of the whole job: engine 0-70%, analysis 70-88%, agent 88-90%, viewer 90-100%)."""
+
+    SHARE = {"engine": (0.0, 0.70), "analysis": (0.70, 0.88), "agent": (0.88, 0.90), "viewer": (0.90, 1.0)}
+    LABEL = {"quality": "Frame quality gate", "integrity": "Evidence-integrity checks",
+             "privacy": "Blurring faces and private text", "fusion": "Fusing depth into 3D (TSDF volume)",
+             "layout": "Fitting walls, floor and ceiling", "coverage": "Measuring surface coverage",
+             "defects": "Finding and placing defects", "labels": "Reading labels",
+             "visuals": "Rectifying walls and drawing the floor plan", "agent": "Agent reviewing the evidence"}
+
+    def __init__(self, path: Path, **info) -> None:
+        self.path, self.started, self.last = path, time.time(), 0.0
+        self.write(state="processing", stage="Starting", step="engine", progress=0.0, started=self.started, **info)
+
+    def write(self, **kw) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        cur = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+        cur.update(kw, updated=time.time(), elapsed_s=round(time.time() - self.started))
+        self.path.write_text(json.dumps(cur), encoding="utf-8")
+
+    def update(self, step: str, frac: float, detail: str) -> None:
+        if time.time() - self.last < 0.7 and frac < 1.0:
+            return
+        self.last = time.time()
+        lo, hi = self.SHARE.get(step, (0.0, 1.0))
+        done = lo + (hi - lo) * max(0.0, min(1.0, frac))
+        elapsed = time.time() - self.started
+        self.write(step=step, stage=self.LABEL.get(detail, detail or step), progress=round(done, 3),
+                   eta_s=round(elapsed / done - elapsed) if done > 0.03 else None)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--video", required=True)
@@ -559,8 +596,22 @@ def main() -> None:
     a = ap.parse_args()
     name = a.name or Path(a.video).stem
     out = Path(a.out) if a.out else ROOT / "results" / name
-    W = build(Path(a.video), name, out, prop=a.property, mode=a.mode, slam_dir=Path(a.slam_dir) if a.slam_dir else None,
-              live_video=not a.no_video, progress=lambda s, f, d: log(f"{s} {f:.0%} {d}"))
+    video = Path(a.video).resolve()
+    data = ROOT / "data"
+    status = Status(out / "status.json", video=video.name, property=a.property, mode=a.mode,
+                    video_path=video.relative_to(data).as_posix() if video.is_relative_to(data) else None)
+
+    def progress(step: str, frac: float, detail: str) -> None:
+        log(f"{step} {frac:.0%} {detail}")
+        status.update(step, frac, detail)
+
+    try:
+        W = build(Path(a.video), name, out, prop=a.property, mode=a.mode, slam_dir=Path(a.slam_dir) if a.slam_dir else None,
+                  live_video=not a.no_video, progress=progress)
+    except BaseException as e:
+        status.write(state="failed", error=f"{type(e).__name__}: {e}")
+        raise
+    status.write(state="done", stage="Done", step="done", progress=1.0, eta_s=0)
     print(json.dumps({"name": W["name"], "coverage": W["coverage"]["overall"], "findings": len(W["findings"]),
                       "grade": W["risk"]["grade"], "decision": W["risk"]["decision"]}, indent=1))
 
