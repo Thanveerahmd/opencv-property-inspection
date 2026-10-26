@@ -8,6 +8,9 @@
 # Settings (environment): AWS_REGION (default: the CLI's region), INSTANCE_TYPE (default c7g.2xlarge),
 # BEDROCK_MODEL_ID (default: picked from the region's inference profiles), STACK (default spatial-inspection).
 set -euo pipefail
+export MSYS_NO_PATHCONV=1   # Git Bash on Windows: pass /aws/... and /dev/sda1 to the CLI unchanged
+WORK=".deploy"              # relative, so the Windows aws.exe and Linux both read it
+mkdir -p "$WORK"
 
 STACK="${STACK:-spatial-inspection}"
 REGION="${AWS_REGION:-$(aws configure get region)}"
@@ -47,7 +50,7 @@ aws iam put-role-policy --role-name "$ROLE" --policy-name app --policy-document 
   {\"Effect\":\"Allow\",\"Action\":[\"bedrock:InvokeModel\",\"bedrock:InvokeModelWithResponseStream\",\"bedrock:Converse\"],\"Resource\":\"*\"}]}"
 
 # 4. code bundle and the precomputed sample results
-BUNDLE="$(mktemp -d)/app.tgz"
+BUNDLE="$WORK/app.tgz"
 git archive --format=tar.gz -o "$BUNDLE" HEAD
 aws s3 cp "$BUNDLE" "s3://$BUCKET/deploy/app.tgz" >/dev/null
 if [ -d results ]; then aws s3 sync results "s3://$BUCKET/deploy/results" --only-show-errors; fi
@@ -62,7 +65,7 @@ fi
 
 # 6. instance: Ubuntu 24.04 arm64, set up by user-data (deploy/aws/bootstrap.sh)
 AMI="$(aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/arm64/hvm/ebs-gp3/ami-id --query Parameter.Value --output text)"
-USERDATA="$(mktemp)"
+USERDATA="$WORK/user-data.sh"
 sed -e "s|__BUCKET__|$BUCKET|g" -e "s|__REGION__|$REGION|g" -e "s|__MODEL__|${BEDROCK_MODEL_ID:-}|g" deploy/aws/bootstrap.sh > "$USERDATA"
 sleep 10   # a new instance profile takes a few seconds to become usable
 ID="$(aws ec2 run-instances --image-id "$AMI" --instance-type "$INSTANCE_TYPE" --security-group-ids "$SG" \
