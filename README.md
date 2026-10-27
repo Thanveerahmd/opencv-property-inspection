@@ -6,6 +6,8 @@ filmed well enough to inspect, finds and measures damage, and places every findi
 agent on Amazon Bedrock then works through that evidence with OpenCV tools, asks for missing parts of the room to be
 filmed again, and proposes a decision that a person approves.
 
+**Team XCore:** Thanveer Ahamed (Gen AI Lead) · Janitha Prathapa (Vision AI Lead) · Janindu Athukorala (ML Engineer) · Dinal Fernando (Solution Architect)
+
 - Technical report: [docs/technical-report.md](docs/technical-report.md)
 - Architecture: [docs/architecture.svg](docs/architecture.svg)
 - What it looks like: [See it in action](#see-it-in-action) (screenshots and clips of every scenario)
