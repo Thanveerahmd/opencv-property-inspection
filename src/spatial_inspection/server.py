@@ -99,8 +99,10 @@ def _s3_put_dir(folder: Path, prefix: str) -> None:
 
 
 # share of the whole job each step of walkthrough.build takes, so progress and the time left are honest
-STEP_SHARE = {"engine": (0.0, 0.70), "analysis": (0.70, 0.88), "agent": (0.88, 0.90), "viewer": (0.90, 1.0)}
-STEP_LABEL = {"engine": "3D engine: Depth Anything 3 + OpenCV 5 SLAM", "quality": "Frame quality gate",
+STEP_SHARE = {"engine": (0.0, 0.62), "splats": (0.62, 0.70), "analysis": (0.70, 0.88), "agent": (0.88, 0.90),
+              "viewer": (0.90, 1.0)}
+STEP_LABEL = {"engine": "3D engine: Depth Anything 3 + OpenCV 5 SLAM", "splats": "Photoreal Gaussian splats",
+              "quality": "Frame quality gate",
               "integrity": "Evidence-integrity checks", "privacy": "Blurring faces and private text",
               "fusion": "Fusing depth into 3D (TSDF volume)", "layout": "Fitting walls, floor and ceiling",
               "coverage": "Measuring surface coverage", "defects": "Finding and placing defects",

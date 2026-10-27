@@ -6,6 +6,8 @@
    OpenCV 5 LK optical flow, SIFT + MAGSAC pose verification and trajectory refinement; persistent landmarks and loop
    candidates; frame-to-model point-to-plane ICP; 1.5 cm TSDF with free-space carving; gravity + Manhattan model frame;
    clean room shell with walls, floor and ceiling textured from the video; objects named by Grounding DINO.
+   Then, in its own environment (.venv-splat), photoreal 3D Gaussian splats trained on the engine's cameras
+   (engine3d/train_splats.py); optional, the build goes on without them.
 2. OpenCV analysis on the engine's cameras and depth (pipeline.run): quality gate, evidence integrity, privacy
    redaction, cv2.Volume TSDF, surface coverage, keyframes, defect candidates placed on the room planes (furniture,
    doors and openings ruled out by depth, Grounding DINO and MobileNetV2), rating-plate text, rectified walls.
@@ -40,6 +42,7 @@ WEB = Path(__file__).parent / "web"
 LITE_ARGS = ["--voxel", "0.03", "--align-iters", "1", "--no-video"]
 ENGINE_STEPS = 14          # the engine prints [1] .. [14] as it goes
 POOLS = ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS")
+SPLAT_ENV = Path(os.environ.get("SI_SPLAT_ENV", ROOT / ".venv-splat"))
 
 DEFECT_LABEL = {"crack": "Crack", "stain": "Stain / water mark", "water_damage": "Water damage", "mould": "Mould",
                 "mold": "Mould", "peeling": "Peeling paint", "peeling_paint": "Peeling paint", "rust": "Rust",
@@ -81,6 +84,43 @@ def run_engine(video: Path, out: Path, mode: str = "advanced", progress=None, lo
     if p.returncode != 0 or not engine_ready(out):
         raise RuntimeError(f"3D engine failed (exit {p.returncode}); see {log_file or out}")
     return out
+
+
+def splat_python() -> Path | None:
+    for p in (SPLAT_ENV / "Scripts" / "python.exe", SPLAT_ENV / "bin" / "python"):
+        if p.exists():
+            return p
+    return None
+
+
+def run_splats(slam_dir: Path, video: Path, progress=None, log_file: Path | None = None) -> bool:
+    """Photoreal Gaussian splats on the engine's cameras (its own environment; skipped when it is not installed).
+    A failure is logged and the walkthrough is built without splats."""
+    py = splat_python()
+    if py is None or os.environ.get("SI_SPLATS", "on").lower() in ("0", "off", "no"):
+        return False
+    threads = os.environ.get("SI_THREADS", "2")
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "SI_THREADS": threads, **{k: os.environ.get(k, threads) for k in POOLS}}
+    args = [str(py), str(ENGINE / "train_splats.py"), "--engine", str(slam_dir.resolve()), "--video", str(video.resolve()),
+            "--iters", os.environ.get("SI_SPLAT_ITERS", "7000")]
+    log("Gaussian splats: training on the engine's cameras")
+    fh = open(log_file, "a", encoding="utf-8") if log_file else None
+    p = subprocess.Popen(args, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                         encoding="utf-8", errors="replace")
+    for line in p.stdout:
+        if fh:
+            fh.write(line)
+            fh.flush()
+        m = re.search(r"step\s+(\d+)/(\d+)", line)
+        if m and progress:
+            progress(int(m.group(1)) / int(m.group(2)), "Photoreal Gaussian splats")
+    p.wait()
+    if fh:
+        fh.close()
+    ok = p.returncode == 0 and (slam_dir / "10_splats" / "room.splat").exists()
+    if not ok:
+        log(f"Gaussian splats failed (exit {p.returncode}); building without them")
+    return ok
 
 
 # ---------------------------------------------------------------------------------------------------- 4. viewer files
@@ -443,6 +483,15 @@ def build_viewer(name: str, video: Path, slam_dir: Path, out: Path, w, result: d
                     "path": [{"t": round(float(run.times[f]), 3), "p": [round(float(v), 3) for v in run.c2w[f][:3, 3]],
                               "f": [round(float(v), 4) for v in run.c2w[f][:3, 2]]} for f in range(run.n)]}}
     W["extras"] = collect_extras(out, slam_dir, video, keyframes)
+    splat = slam_dir / "10_splats" / "room.splat"
+    if splat.exists():          # photoreal mode in the viewer
+        shutil.copy(splat, out / "slam" / "room.splat")
+        W["files"]["splat"] = "slam/room.splat"
+        m = slam_dir / "10_splats" / "metrics.json"
+        W["splats"] = json.loads(m.read_text(encoding="utf-8")) if m.exists() else {}
+        if (slam_dir / "10_splats" / "compare.jpg").exists():
+            shutil.copy(slam_dir / "10_splats" / "compare.jpg", out / "slam" / "splats_vs_video.jpg")
+            W["extras"]["maps"].append({"file": "slam/splats_vs_video.jpg", "label": "Video frame vs Gaussian splats (held out)"})
     W["property_id"] = prop or name
     W["created_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     W["risk"] = risk
@@ -519,7 +568,7 @@ def engine_summary(slam_dir: Path) -> dict:
 # ---------------------------------------------------------------------------------------------------- all of it
 def build(video: Path, name: str, out: Path, prop: str | None = None, mode: str = "advanced", progress=None,
           slam_dir: Path | None = None, live_video: bool = True) -> dict:
-    """`progress(step, fraction, detail)` with step in engine / analysis / agent / viewer."""
+    """`progress(step, fraction, detail)` with step in engine / splats / analysis / agent / viewer."""
     from .agent import run_agent
     from .pipeline import STAGES, run
     from .scene import load_platform_run
@@ -534,6 +583,8 @@ def build(video: Path, name: str, out: Path, prop: str | None = None, mode: str 
         run_engine(video, slam_dir, mode=mode, progress=lambda fr, line: prog("engine", fr, line),
                    log_file=out / "engine.log")
     prog("engine", 1.0, "3D model ready")
+    if not (slam_dir / "10_splats" / "room.splat").exists():
+        run_splats(slam_dir, video, progress=lambda fr, d: prog("splats", fr, d), log_file=out / "engine.log")
 
     w = load_platform_run(slam_dir, video, name)
     prog("analysis", 0.0, STAGES[0])
@@ -554,9 +605,10 @@ def build(video: Path, name: str, out: Path, prop: str | None = None, mode: str 
 
 class Status:
     """results/<name>/status.json as the web app writes it, so a run started here shows on the dashboard with its
-    progress (shares of the whole job: engine 0-70%, analysis 70-88%, agent 88-90%, viewer 90-100%)."""
+    progress (shares of the whole job: engine 0-62%, splats 62-70%, analysis 70-88%, agent 88-90%, viewer 90-100%)."""
 
-    SHARE = {"engine": (0.0, 0.70), "analysis": (0.70, 0.88), "agent": (0.88, 0.90), "viewer": (0.90, 1.0)}
+    SHARE = {"engine": (0.0, 0.62), "splats": (0.62, 0.70), "analysis": (0.70, 0.88), "agent": (0.88, 0.90),
+             "viewer": (0.90, 1.0)}
     LABEL = {"quality": "Frame quality gate", "integrity": "Evidence-integrity checks",
              "privacy": "Blurring faces and private text", "fusion": "Fusing depth into 3D (TSDF volume)",
              "layout": "Fitting walls, floor and ceiling", "coverage": "Measuring surface coverage",

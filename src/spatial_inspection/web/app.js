@@ -386,6 +386,7 @@ const WALK_STEPS = [
   { id: "e9", k: "engine", t: "Real-world texturing", s: "Walls, floor and ceiling textured from the video", re: /textured|shell/i },
   { id: "e10", k: "engine", t: "Floor plan and navigation map", s: "Occupancy grid and A* path", re: /2d maps|occupancy|navigation/i },
   { id: "e11", k: "engine", t: "3D exports and self-check", s: "GLB models, previews, reconstruction metrics", re: /exports|previews|evaluation|model ready/i },
+  { id: "sp", g: "Photoreal 3D", t: "Gaussian splats", s: "Trained on the engine's cameras to look like the video · GPU" },
   { id: "a1", g: "OpenCV analysis", k: "analysis", t: "Quality gate and evidence integrity", s: "Sharpness; reused, spliced, looped or filmed-off-a-screen footage", re: /quality|integrity/i },
   { id: "a2", k: "analysis", t: "Privacy", s: "Faces (YuNet) and private text blurred before analysis", re: /privacy|blurring/i },
   { id: "a3", k: "analysis", t: "OpenCV TSDF and room planes", s: "cv2.Volume fusion on the engine's depth and poses", re: /fusion|fusing|layout|fitting walls/i },
@@ -509,6 +510,7 @@ function walkStep(p, lines) {
   const k = (p && p.key) || "", ph = (p && p.phase) || "";
   if (k === "viewer" || k === "done") return "vw";
   if (k === "agent" || (k === "analysis" && /agent/i.test(ph))) return "ag";
+  if (k === "splats") return "sp";
   const pool = WALK_STEPS.filter((x) => x.k === (k === "analysis" ? "analysis" : "engine"));
   const hit = pool.find((x) => x.re.test(ph));
   if (hit) return hit.id;
