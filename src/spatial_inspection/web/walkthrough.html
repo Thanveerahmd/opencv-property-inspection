@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <!-- Archivo loads without blocking rendering / scripts (falls back to system fonts offline). -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,100..900&display=swap" media="print" onload="this.media='all'">
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
 <script type="module" src="https://cdn.jsdelivr.net/npm/@google/model-viewer@3.5.0/dist/model-viewer.min.js"></script>
 <style>
   /* Design tokens: same "Assay" ivory / black theme as the console (frontend/styles.css). */
@@ -130,6 +131,11 @@
 
   /* 3D viewer */
   .mvwrap { position:relative; border-radius:var(--r); overflow:hidden; border:1px solid var(--border); }
+  .splatview { position:absolute; inset:0; z-index:2; background:#0b0b0a; }
+  .splatview canvas { display:block; }
+  .splat-lbl { position:absolute; left:12px; bottom:12px; z-index:4; background:rgba(0,0,0,.62); color:#f6f4ed; font-size:12px;
+               padding:5px 10px; border-radius:999px; pointer-events:none; }
+  #pip, #pip-lbl { z-index:5; }
   model-viewer { width:100%; height:640px; display:block; background:var(--mv-bg); --poster-color:transparent; }
   model-viewer:not(:defined) > * { display:none; }
   .mv-fallback { display:none; position:absolute; inset:0; place-items:center; text-align:center; color:var(--text-3); font-size:13px; padding:24px; }
@@ -398,6 +404,8 @@
                       camera-orbit="30deg 55deg auto" field-of-view="35deg" max-field-of-view="100deg"
                       min-camera-orbit="auto 0deg 0.01m" max-camera-orbit="auto 180deg auto" interaction-prompt="none"></model-viewer>
         <div class="mv-fallback" aria-live="polite"><div><b>Loading the 3D viewer…</b><br>If this stays, the model-viewer library could not be downloaded — the GLB can still be opened with the “GLB” button above.</div></div>
+        <div class="splatview" id="splat" hidden></div>
+        <div class="splat-lbl" id="splat-lbl" hidden>Photoreal · 3D Gaussian splats trained on this video<span id="splat-info"></span></div>
         <div class="pip-lbl" id="pip-lbl" hidden>3D model seen from the video camera · t = <span id="pip-t">0.0</span> s</div>
         <video id="pip" controls muted playsinline hidden></video>
         <div class="mv-legend" id="mv-legend"><span><i style="background:#d92d20"></i>Detected</span><span><i style="background:#dc6803"></i>Needs review</span><span><i style="background:#1570ef"></i>Unknown</span></div>
@@ -694,8 +702,19 @@ function init(w) {
   gtabs.classList.add("wrap");
   ex.models.forEach((m) => gtabs.insertAdjacentHTML("beforeend", `<button type="button" data-g="${esc(m.file)}">${esc(m.label)}</button>`));
   const modelTabs = () => document.querySelectorAll(".tabs button[data-g], .tabs button[data-mode]");
+  if (w.files.splat) {
+    gtabs.insertAdjacentHTML("afterbegin", `<button type="button" data-mode="splat">Photoreal</button>` +
+      (w.camera && w.camera.path.length ? `<button type="button" data-mode="splat-walk">Photoreal walk inside</button>` : ""));
+    const sp = w.splats || {};
+    $("splat-info").textContent = sp.psnr_held_out ? ` · ${sp.psnr_held_out} dB on frames it never saw · ${(sp.exported / 1e6).toFixed(1)} M splats` : "";
+    gtabs.querySelectorAll("button[data-mode^='splat']").forEach((b) => b.onclick = () => {
+      modelTabs().forEach((x) => x.classList.toggle("on", x === b));
+      openSplat(b.dataset.mode === "splat-walk");
+    });
+  }
   document.querySelectorAll(".tabs button[data-g]").forEach((b) => b.onclick = () => {
     modelTabs().forEach((x) => x.classList.toggle("on", x === b));
+    closeSplat();
     leaveInside();
     const own = b.dataset.g in w.files;              // finding pins only belong to the inspection GLBs
     $("mv").src = own ? w.files[b.dataset.g] : b.dataset.g;
@@ -706,7 +725,7 @@ function init(w) {
   if (w.camera && w.camera.path.length && srcVid) {
     $("btn-inside").hidden = false;
     $("pip").src = srcVid;
-    $("btn-inside").onclick = () => { modelTabs().forEach((x) => x.classList.toggle("on", x === $("btn-inside"))); enterInside(); };
+    $("btn-inside").onclick = () => { modelTabs().forEach((x) => x.classList.toggle("on", x === $("btn-inside"))); closeSplat(); enterInside(); };
     $("pip").addEventListener("seeked", () => setCam($("pip").currentTime, true));
     $("pip").addEventListener("loadeddata", () => { if (inside) setCam($("pip").currentTime, true); });
     const m = location.hash.match(/inside=([\d.]+)/);
@@ -999,6 +1018,7 @@ function extras(ex) {
 }
 
 function modelTabs0() {   // back to the "Full model" tab
+  closeSplat();
   document.querySelectorAll(".tabs button[data-g], .tabs button[data-mode]").forEach((x) => x.classList.toggle("on", x.dataset.g === "glb"));
   if ($("mv").getAttribute("src") !== W.files.glb) $("mv").src = W.files.glb;
   showPins(true);
@@ -1037,6 +1057,36 @@ function setupModel(w) {
     b.onclick = () => focusFinding(f.n);
     mv.appendChild(b);
   }
+}
+
+// ---- "Photoreal": the room's Gaussian splats (rendered by the module script below), optionally on the video's path
+let splatWalk = false, splatRaf = 0;
+async function openSplat(walk) {
+  leaveInside();
+  $("splat").hidden = false; $("splat-lbl").hidden = false; $("mv-legend").hidden = true;
+  splatWalk = walk;
+  $("pip").hidden = !walk; $("pip-lbl").hidden = !walk;
+  try {
+    await window.SplatView.open($("splat"), W.files.splat, {findings: liveFindings(), path: W.camera ? W.camera.path : [],
+                                                              fov: W.camera ? W.camera.fov_v_deg : 60});
+  } catch (e) { $("splat-info").textContent = ` · could not load: ${e.message || e}`; return; }
+  cancelAnimationFrame(splatRaf);
+  if (!walk) return;
+  const follow = () => {
+    if (!splatWalk) return;
+    const {p, f} = poseAt($("pip").currentTime || 0);
+    window.SplatView.pose(p, f, W.camera.fov_v_deg);
+    $("pip-t").textContent = ($("pip").currentTime || 0).toFixed(1);
+    splatRaf = requestAnimationFrame(follow);
+  };
+  splatRaf = requestAnimationFrame(follow);
+}
+function closeSplat() {
+  if ($("splat").hidden) return;
+  splatWalk = false; cancelAnimationFrame(splatRaf);
+  $("splat").hidden = true; $("splat-lbl").hidden = true;
+  $("pip").pause(); $("pip").hidden = true; $("pip-lbl").hidden = true;
+  if (window.SplatView) window.SplatView.stop();      // no rendering while hidden
 }
 
 // ---- "walk inside": the browser camera follows the SLAM camera of the video (same view as the video frame)
@@ -1137,6 +1187,74 @@ function chart(s) {
     ${(W.keyframes || []).map((k) => `<line x1="${X(k.time_s)}" x2="${X(k.time_s)}" y1="126" y2="134" stroke="#b400b4" stroke-width="2" vector-effect="non-scaling-stroke"/>`).join("")}
     <line class="cursor" x1="0" x2="0" y1="0" y2="140" stroke="currentColor" stroke-opacity=".5" vector-effect="non-scaling-stroke"/>`;
 }
+</script>
+<script type="module">
+// Photoreal: 3D Gaussian splats (engine3d/train_splats.py) drawn by GaussianSplats3D (MIT) in three.js, with the
+// camera path and the finding pins in the same scene. Model frame: x right, y up, z back, metres.
+const GS_URL = "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js";
+const COL = {DETECTED: 0xd92d20, NEEDS_REVIEW: 0xdc6803};
+let THREE = null, GS = null, viewer = null, loaded = null, running = false;
+
+function badge(text, hex) {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d");
+  g.fillStyle = hex; g.beginPath(); g.arc(32, 32, 28, 0, Math.PI * 2); g.fill();
+  g.fillStyle = "#fff"; g.font = "bold 30px Archivo, system-ui, sans-serif"; g.textAlign = "center"; g.textBaseline = "middle";
+  g.fillText(text, 32, 34);
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({map: new THREE.CanvasTexture(c), depthTest: false}));
+  s.scale.set(0.16, 0.16, 1); s.renderOrder = 10;
+  return s;
+}
+
+function overlay(findings, path) {
+  const scene = new THREE.Scene();
+  const pts = path.map((q) => new THREE.Vector3(...q.p));
+  if (pts.length > 1) {
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({color: 0x2e90fa})));
+  }
+  for (const f of findings) {
+    if (!f.xyz) continue;
+    const tip = f.tip || f.xyz, col = COL[f.state] || 0x1570ef;
+    const line = [new THREE.Vector3(...f.xyz), new THREE.Vector3(...tip)];
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(line), new THREE.LineBasicMaterial({color: col})));
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.025, 12, 8), new THREE.MeshBasicMaterial({color: col}));
+    dot.position.set(...f.xyz);
+    scene.add(dot);
+    const b = badge(String(f.n), "#" + col.toString(16).padStart(6, "0"));
+    b.position.set(...tip);
+    scene.add(b);
+  }
+  return scene;
+}
+
+window.SplatView = {
+  async open(el, url, {findings, path, fov}) {
+    if (!THREE) { THREE = await import("three"); GS = await import(GS_URL); }
+    if (!viewer) {
+      const p0 = path[0] || {p: [0, 1.5, 0], f: [0, 0, -1]};
+      viewer = new GS.Viewer({
+        rootElement: el, threeScene: overlay(findings, path), cameraUp: [0, 1, 0],
+        initialCameraPosition: p0.p, initialCameraLookAt: p0.p.map((v, i) => v + p0.f[i]),
+        sharedMemoryForWorkers: false, gpuAcceleratedSort: false, dynamicScene: false, antialiased: true,
+        sphericalHarmonicsDegree: 0, useBuiltInControls: true,
+      });
+      viewer.camera.fov = fov; viewer.camera.near = 0.02; viewer.camera.updateProjectionMatrix();
+      loaded = viewer.addSplatScene(url, {showLoadingUI: true, progressiveLoad: false, splatAlphaRemovalThreshold: 5,
+                                          format: GS.SceneFormat.Splat})
+        .then(() => { viewer.start(); running = true; });
+    } else if (!running) { viewer.start(); running = true; }
+    await loaded;
+  },
+  pose(p, f, fov) {
+    if (!viewer) return;
+    const cam = viewer.camera, t = p.map((v, i) => v + f[i] * 0.6);
+    cam.position.set(...p);
+    if (fov && cam.fov !== fov) { cam.fov = fov; cam.updateProjectionMatrix(); }
+    if (viewer.controls) { viewer.controls.target.set(...t); viewer.controls.update(); } else cam.lookAt(...t);
+  },
+  stop() { if (viewer && running) { viewer.stop(); running = false; } },
+};
 </script>
 </body>
 </html>
