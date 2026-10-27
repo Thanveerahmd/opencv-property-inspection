@@ -9,7 +9,9 @@ filmed again, and proposes a decision that a person approves.
 **Team XCore:** Thanveer Ahamed (Gen AI Lead) · Janitha Prathapa (Vision AI Lead) · Janindu Athukorala (ML Engineer) · Dinal Fernando (Solution Architect)
 
 - Technical report: [docs/technical-report.md](docs/technical-report.md)
+- Live app (no login): <https://d3ppa06ysdffln.cloudfront.net>
 - Architecture: [docs/architecture.svg](docs/architecture.svg)
+- Agent workflow (perception → decision → action): [docs/agent-workflow.svg](docs/agent-workflow.svg)
 - What it looks like: [See it in action](#see-it-in-action) (screenshots and clips of every scenario)
 
 <p align="center"><img src="docs/media/photoreal-splats.gif" width="760"
@@ -225,13 +227,21 @@ priority, so a laptop stays cool; the server sets both higher. With AWS credenti
 
 ## Deploy to AWS
 
+**Live:** <https://d3ppa06ysdffln.cloudfront.net>, serverless: CloudFront + S3 serve the web app, API Gateway + Lambda
+run the FastAPI API, the browser uploads the video to S3 with a presigned URL, and an AWS Batch GPU job (Spot, scales
+to zero) runs the whole pipeline per walkthrough and writes the results back to S3. Details and measured timings are
+in the [technical report, section 6](docs/technical-report.md#6-aws-deployment).
+
+**Single instance** (the scripts in `deploy/aws/`):
+
 ```bash
 aws login
 deploy/aws/deploy.sh
 ```
 
 This creates an S3 bucket, an IAM role limited to that bucket and Bedrock, a security group, and a Graviton EC2
-instance that installs the pinned dependencies and serves the app on port 80 (see `deploy/aws/`).
+instance that installs the pinned dependencies and serves the app on port 80 (set `INSTANCE_TYPE` to a G5 / G6 type for
+the GPU engine).
 
 ## Layout
 

@@ -98,19 +98,57 @@ OpenCV 5 on the walkthrough, and their results decide what it does next:
 Every step is written to `agent.json`: the model's reasoning, each tool call with its inputs and outputs, and the
 images it looked at. When Bedrock is not reachable the same tools run under a rule-based policy, and the trace says so.
 
+![Agent workflow: perception, decision, action and the person in control](agent-workflow.svg)
+
+### 5.1 Trace: OpenCV 5 output changes the next action
+
+From `results/demo_property_lite/agent.json` (29 steps, rule-based policy; the same trace is the **Agent trace** panel
+in the viewer). Each row is a tool call whose OpenCV 5 output decided what the agent did next:
+
+| Step | Tool (perception) | OpenCV 5 output | What it changed (decision → action) |
+| --- | --- | --- | --- |
+| 1 | `coverage_report` | 38.6% of the surface inspected (minimum 60%); ceiling 0.3% | steps 2-4: `request_refilm` for the main-room ceiling, the main-room floor and the south wall; the decision must be REFER |
+| 5 | `check_integrity` | 187 frames hashed, no reuse, cuts, loops or screen moiré | integrity low, so no fraud referral |
+| 7-9 | `look_at` → `find_better_view` F001 | crop score 0.59; best other view frame 67 at 2.36 m, 17.6°: rust re-detected at **0.995** | `flag_for_review` F001 ("possible rust: seen again in frame 67") |
+| 16-18 | `look_at` → `find_better_view` F007 | crop score 0.50; best other view frame 162 at 3.25 m: **nothing re-detected**, sharpness 22.9 | `dismiss_finding` F007 ("weak evidence") |
+| 28-29 | `assess_risk` → `request_human_approval` | 3 findings for review, 39% inspected, grade A (96.7), repairs USD 280-1,900 | proposes REFER and waits for a person |
+
+On tom_home the same loop ran in 8 steps: 17.2% inspected led to three re-film requests (ceiling, floor, east wall)
+and REFER; no candidate survived the 3D and object checks, so no finding was proposed.
+
+### 5.2 Agent evaluation
+
+| Criterion | Evidence |
+| --- | --- |
+| Task success | Every walkthrough ends with a proposal and its reasons: demo home and tom_home locally, the synthetic room on AWS. All three are below 60% inspected and all three are REFER, as the rule requires; the re-film requests name the largest measured gaps (the ceiling first in both homes). On the demo home 7 candidates were re-checked from another view: 3 re-detected and kept for review, 4 not re-detected and dismissed with the reason. |
+| Failure handling | No Bedrock model or no network: the rule-based policy runs the same tools and the trace records `engine: policy` (the live deployment runs this way). No candidates: the agent still runs coverage, integrity and risk (tom_home). A failed GPU job is marked failed with its log and can be re-run from the app without re-uploading (the first AWS smoke runs failed in the 3D engine and show as failed with their log; later runs completed). Integrity flags force a referral to a person. |
+| Observability | `agent.json` keeps every step (tool, inputs, outputs, images, time) and is shown as the Agent trace in the viewer and in the report; pipeline progress is in `status.json` and `GET /api/v1/walkthrough/{name}/log`; the 3D engine writes `engine.log` and `08_evaluation/evaluation.json`. |
+| Human control | The agent can only propose: `request_human_approval` leaves the walkthrough "awaiting approval" until a person approves or overrides it with a note, and any finding can be confirmed or dismissed by a person. Both are written into the same trace. |
+
 ## 6. AWS deployment
+
+The app is live at <https://d3ppa06ysdffln.cloudfront.net> (no login), deployed serverless so that it costs nothing
+while idle and pays per walkthrough:
 
 | Service | Use |
 | --- | --- |
-| Amazon EC2 | The FastAPI web endpoint and the pipeline. The 3D engine (Depth Anything 3, Grounding DINO) needs an NVIDIA instance (G5 / G6 family); the OpenCV-only path runs on Graviton (arm64, CPU) |
-| Amazon S3 | Uploaded videos, results, rectified walls, 3D points, agent traces, the code bundle |
-| Amazon Bedrock | The agent's model (Claude, Converse API with tool use and images) |
-| AWS IAM + Systems Manager | Instance role limited to the bucket and Bedrock; shell access without SSH keys |
+| Amazon CloudFront + S3 | The web app and the 3D viewer (static files), and each walkthrough's results |
+| Amazon API Gateway + AWS Lambda | The FastAPI API (`/api/v1/*`, `/docs`): walkthroughs, progress, ask, approve, findings |
+| Amazon S3 | The browser uploads the video straight to S3 with a presigned URL (up to 2 GB); results (95 files per run) go back to S3 |
+| AWS Batch (GPU, Spot) | One job per walkthrough runs the whole pipeline (3D engine, splats, OpenCV analysis, agent, viewer files); queued one at a time, scales to zero |
+| Amazon Bedrock | The agent's model when `BEDROCK_MODEL_ID` is set; the live deployment has none configured, so the rule-based policy runs |
+| AWS IAM | The job's role reaches only the bucket and Bedrock |
 
-`deploy/aws/deploy.sh` creates the bucket, role, security group and instance; `deploy/aws/bootstrap.sh` installs
-the pinned dependencies, downloads the models from their sources with SHA-256 checks, and starts the service. Its
-default instance (`INSTANCE_TYPE=c7g.2xlarge`) serves the OpenCV-only path; the GPU engine needs a GPU instance type
-and the CUDA build of PyTorch.
+Measured on the live deployment for a 16 s synthetic-room video in Lite mode: the upload reached S3 in 6 s, the job
+waited 6 min 25 s for AWS Batch to start a GPU instance (cold start, NVIDIA A10G), the pipeline took 13 min 46 s, and
+the 95 result files reached S3 in 1 s, about 20 minutes end to end. `GET /api/v1/health` reports OpenCV 5.0.0, the
+GPU backend, S3 and the queue. Earlier runs on an NVIDIA T4 failed in the 3D engine; they show as failed in the app
+with their log and a re-run button.
+
+`deploy/aws/` keeps a single-instance alternative: `deploy.sh` creates a bucket, a role limited to that bucket and
+Bedrock, a security group and an EC2 instance, and `bootstrap.sh` installs the pinned dependencies, downloads the
+models with SHA-256 checks and starts the service (the OpenCV-only path on Graviton, or the GPU engine on a G5 / G6
+instance with the CUDA build of PyTorch).
 
 ## 7. Evaluation
 

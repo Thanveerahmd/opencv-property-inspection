@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 860" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .t { font-size: 30px; font-weight: 700; fill: #0f172a }
+      .s { font-size: 17px; fill: #475569 }
+      .h { font-size: 15px; font-weight: 700; letter-spacing: .12em }
+      .b { font-size: 17px; font-weight: 700; fill: #0f172a }
+      .d { font-size: 14.5px; fill: #334155 }
+      .m { font-family: Consolas, monospace; font-size: 14.5px; font-weight: 700; fill: #0f172a }
+      .ln { stroke: #475569; stroke-width: 2.2; fill: none }
+      .dash { stroke: #475569; stroke-width: 2; fill: none; stroke-dasharray: 7 6 }
+    </style>
+  </defs>
+  <rect width="1400" height="860" fill="#ffffff"/>
+  <text x="40" y="54" class="t">Agent workflow: perception → decision → action, with a person in control</text>
+  <text x="40" y="84" class="s">agent.py · tools run OpenCV 5 on the walkthrough · the reasoner is Amazon Bedrock (Converse, tool use, images) or the rule-based policy over the same tools</text>
+
+  <!-- lanes -->
+  <rect x="30" y="110" width="430" height="600" rx="16" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+  <text x="50" y="140" class="h" fill="#047857">PERCEPTION · OPENCV 5 TOOLS</text>
+  <rect x="490" y="110" width="400" height="600" rx="16" fill="#f5f3ff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="510" y="140" class="h" fill="#6d28d9">DECISION · ORCHESTRATION</text>
+  <rect x="920" y="110" width="450" height="600" rx="16" fill="#fff7ed" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="940" y="140" class="h" fill="#b45309">ACTION</text>
+
+  <!-- perception tools -->
+  <g>
+    <rect x="50" y="160" width="390" height="92" rx="10" fill="#fff" stroke="#10b981"/>
+    <text x="66" y="186" class="m">coverage_report</text>
+    <text x="66" y="210" class="d">10 cm surface samples vs every camera's depth:</text>
+    <text x="66" y="230" class="d">seen / inspectable / inspected per wall, floor, ceiling</text>
+
+    <rect x="50" y="264" width="390" height="92" rx="10" fill="#fff" stroke="#10b981"/>
+    <text x="66" y="290" class="m">check_integrity</text>
+    <text x="66" y="314" class="d">img_hash PHash reuse, compareHist cuts, frozen and</text>
+    <text x="66" y="334" class="d">looped frames, dft moiré + findContours screen bezels</text>
+
+    <rect x="50" y="368" width="390" height="92" rx="10" fill="#fff" stroke="#10b981"/>
+    <text x="66" y="394" class="m">list_candidates · look_at</text>
+    <text x="66" y="418" class="d">OpenCV defect detectors on keyframes; Grounding DINO</text>
+    <text x="66" y="438" class="d">+ MobileNetV2 veto objects; crop sharpness, size</text>
+
+    <rect x="50" y="472" width="390" height="112" rx="10" fill="#fff" stroke="#10b981" stroke-width="2.2"/>
+    <text x="66" y="498" class="m">find_better_view</text>
+    <text x="66" y="522" class="d">projectPoints the finding's 3D position into every</text>
+    <text x="66" y="542" class="d">frame, keep unoccluded views (depth), pick the closest,</text>
+    <text x="66" y="562" class="d">most square-on, sharpest one and re-run detection</text>
+
+    <rect x="50" y="596" width="390" height="92" rx="10" fill="#fff" stroke="#10b981"/>
+    <text x="66" y="622" class="m">assess_risk</text>
+    <text x="66" y="646" class="d">grade, perils, repair range from the findings and</text>
+    <text x="66" y="666" class="d">coverage, by configurable rules</text>
+  </g>
+
+  <!-- decision -->
+  <rect x="510" y="160" width="360" height="190" rx="12" fill="#fff" stroke="#8b5cf6" stroke-width="2"/>
+  <text x="528" y="190" class="b">Agent loop</text>
+  <text x="528" y="216" class="d">reads each tool result (numbers + images),</text>
+  <text x="528" y="238" class="d">chooses the next tool, writes its reasoning</text>
+  <text x="528" y="268" class="d">Bedrock model when configured; otherwise</text>
+  <text x="528" y="290" class="d">the rule-based policy runs the same tools,</text>
+  <text x="528" y="312" class="d">and the trace says which one ran</text>
+
+  <rect x="510" y="372" width="360" height="250" rx="12" fill="#fff" stroke="#8b5cf6"/>
+  <text x="528" y="400" class="b">Decision rules the output feeds</text>
+  <text x="528" y="430" class="d">• inspected &lt; 60 % → must be REFER,</text>
+  <text x="544" y="452" class="d">re-film the largest gaps</text>
+  <text x="528" y="482" class="d">• re-detected on a better view → keep</text>
+  <text x="544" y="504" class="d">for a person's review (or confirm)</text>
+  <text x="528" y="534" class="d">• not re-detected / weak → dismiss,</text>
+  <text x="544" y="556" class="d">with the reason</text>
+  <text x="528" y="586" class="d">• integrity flags → REFER to a person</text>
+
+  <!-- actions -->
+  <rect x="940" y="160" width="410" height="92" rx="10" fill="#fff" stroke="#f59e0b"/>
+  <text x="956" y="186" class="m">request_refilm</text>
+  <text x="956" y="210" class="d">instructions to the person filming, e.g. "tilt up and</text>
+  <text x="956" y="230" class="d">sweep the whole main-room ceiling slowly"</text>
+
+  <rect x="940" y="264" width="410" height="92" rx="10" fill="#fff" stroke="#f59e0b"/>
+  <text x="956" y="290" class="m">flag_for_review · confirm · dismiss_finding</text>
+  <text x="956" y="314" class="d">each candidate gets a state and a reason, shown on</text>
+  <text x="956" y="334" class="d">its pin in the 3D model and in the report</text>
+
+  <rect x="940" y="368" width="410" height="92" rx="10" fill="#fff" stroke="#f59e0b"/>
+  <text x="956" y="394" class="m">request_human_approval</text>
+  <text x="956" y="418" class="d">proposes PROCEED / CONDITIONS / REFER with the</text>
+  <text x="956" y="438" class="d">summary; nothing is final until a person acts</text>
+
+  <rect x="940" y="490" width="410" height="132" rx="12" fill="#fdf2f8" stroke="#ec4899" stroke-width="2"/>
+  <text x="956" y="518" class="b">Person in control (web app)</text>
+  <text x="956" y="544" class="d">Approve proposal or Override with a decision</text>
+  <text x="956" y="566" class="d">and a note; Confirm / Dismiss any finding.</text>
+  <text x="956" y="588" class="d">Recorded in the same trace as the agent's</text>
+  <text x="956" y="610" class="d">steps.</text>
+
+  <!-- arrows -->
+  <path d="M440 206 H510" class="ln" marker-end="url(#a)"/>
+  <path d="M440 310 C475 310 475 250 510 250" class="ln" marker-end="url(#a)"/>
+  <path d="M440 414 C478 414 478 470 510 470" class="ln" marker-end="url(#a)"/>
+  <path d="M440 528 C480 528 480 520 510 520" class="ln" marker-end="url(#a)"/>
+  <path d="M440 642 C480 642 480 600 510 600" class="ln" marker-end="url(#a)"/>
+  <path d="M870 206 H940" class="ln" marker-end="url(#a)"/>
+  <path d="M870 470 C905 470 905 310 940 310" class="ln" marker-end="url(#a)"/>
+  <path d="M870 560 C905 560 905 414 940 414" class="ln" marker-end="url(#a)"/>
+  <path d="M1145 460 V490" class="ln" marker-end="url(#a)"/>
+  <!-- loop: decision asks for a better view -->
+  <path d="M510 548 C482 548 470 560 442 560" class="dash" marker-end="url(#a)"/>
+  <text x="510" y="650" class="d" fill="#6d28d9">⇠ dashed: an unclear crop sends the agent back</text>
+  <text x="510" y="670" class="d" fill="#6d28d9">to find_better_view for a new image</text>
+  <!-- loop: re-film to the next walkthrough -->
+  <path d="M1350 206 H1388 V766 H16 V206 H48" class="dash" marker-end="url(#a)"/>
+  <text x="520" y="758" class="d">re-filmed video → a new walkthrough through the same pipeline</text>
+
+  <!-- observability -->
+  <rect x="30" y="782" width="1340" height="62" rx="12" fill="#f1f5f9" stroke="#94a3b8"/>
+  <text x="50" y="810" class="b">Observability</text>
+  <text x="190" y="810" class="d">every step → agent.json (tool, inputs, outputs, images, time) → "Agent trace" panel in the viewer and the exported report;</text>
+  <text x="190" y="832" class="d">pipeline progress → status.json and GET /api/v1/walkthrough/{name}/log; each trace says whether Bedrock or the policy reasoned</text>
+</svg>
