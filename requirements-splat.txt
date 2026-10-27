@@ -1,0 +1,13 @@
+# Gaussian splats of the room (engine3d/train_splats.py) run in their own environment, because gsplat's prebuilt
+# Windows wheels exist for Python 3.10 + PyTorch 2.4 + CUDA 12.4 only (no compiler needed):
+#   uv venv .venv-splat --python 3.10
+#   uv pip install --python .venv-splat/Scripts/python.exe "torch==2.4.1+cu124" --index-url https://download.pytorch.org/whl/cu124
+#   uv pip install --python .venv-splat/Scripts/python.exe -r requirements-splat.txt --extra-index-url https://docs.gsplat.studio/whl/pt24cu124 --index-strategy unsafe-best-match
+# On Linux, `pip install gsplat==1.5.3` builds against the installed PyTorch. gsplat is Apache-2.0 (not the Inria
+# Gaussian-splatting code, which is non-commercial).
+gsplat==1.5.3+pt24cu124
+numpy==2.0.2
+opencv-python-headless==4.10.0.84
+plyfile==1.1.5
+packaging==26.3     # gsplat imports these two at run time without declaring them
+setuptools==75.8.0
