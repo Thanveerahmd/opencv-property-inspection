@@ -49,7 +49,7 @@ From one phone video of a room:
    where the phone was at each moment of the video, a live map video of coverage growing as the person walked, the
    floor plan, the agent's trace and a report.
 
-![Architecture](architecture.svg)
+![Pipeline inside the GPU job](pipeline.svg)
 
 ## 4. OpenCV 5 implementation
 
@@ -128,27 +128,32 @@ and REFER; no candidate survived the 3D and object checks, so no finding was pro
 ## 6. AWS deployment
 
 The app is live at <https://d3ppa06ysdffln.cloudfront.net> (no login), deployed serverless so that it costs nothing
-while idle and pays per walkthrough:
+while idle and pays per walkthrough. It follows the team's AWS deployment plan; the live stack runs in us-east-2.
 
-| Service | Use |
-| --- | --- |
-| Amazon CloudFront + S3 | The web app and the 3D viewer (static files), and each walkthrough's results |
-| Amazon API Gateway + AWS Lambda | The FastAPI API (`/api/v1/*`, `/docs`): walkthroughs, progress, ask, approve, findings |
-| Amazon S3 | The browser uploads the video straight to S3 with a presigned URL (up to 2 GB); results (95 files per run) go back to S3 |
-| AWS Batch (GPU, Spot) | One job per walkthrough runs the whole pipeline (3D engine, splats, OpenCV analysis, agent, viewer files); queued one at a time, scales to zero |
-| Amazon Bedrock | The agent's model when `BEDROCK_MODEL_ID` is set; the live deployment has none configured, so the rule-based policy runs |
-| AWS IAM | The job's role reaches only the bucket and Bedrock |
+![AWS architecture (live, serverless)](architecture.svg)
+
+| Piece | AWS resource | Notes |
+| --- | --- | --- |
+| Edge | Amazon CloudFront + Origin Access Control | A CloudFront Function routes `/` to the console, `/walkthroughs/<name>/` to the viewer and that walkthrough's results, and `/api/*`, `/docs` to API Gateway (no caching). JSON is served `no-store`. |
+| Storage | One private S3 bucket | `web/` (console, viewer), `uploads/<name>/` (the video, presigned PUT, 1 h), `results/<name>/` (status, walkthrough JSON, GLBs, splat, videos, findings, `agent.json`, reports; about 95 files per run), `deploy/` (source zip). Public access blocked; CORS for the browser PUT. |
+| API | API Gateway (HTTP API) + AWS Lambda | FastAPI via Mangum in a container image (1.5 GB, 60 s): upload-url, start, log, status, list, portfolio, ask, approve, findings review, report. Uploads bypass it (10 MB gateway limit). |
+| GPU work | AWS Batch: job queue, managed EC2 compute environments (Spot, price-capacity optimised, plus on-demand fallback) | 0 to 1 instance (g4dn.xlarge T4, g5.xlarge A10G, g6.xlarge L4), ECS GPU AMI, 120 GB gp3. Job: 1 GPU, 4 vCPU, 14.5 GB, 4 h timeout. It runs the unchanged pipeline (3D engine, splats, OpenCV 5 analysis, agent, viewer build), streams `status.json` and logs to S3 every 5 s and uploads the results; the instance then terminates. |
+| Images | Amazon ECR + AWS CodeBuild | GPU image (CUDA 12.4, Python 3.11, PyTorch 2.5.1, gsplat, model weights baked in, about 15 GB) and API image, built by CodeBuild from a source zip in the bucket. |
+| Agent | Amazon Bedrock (Converse) | Called from the job when a model is configured; the live stack has none, so the rule-based policy runs. |
+| Access | AWS IAM, SSM Parameter Store | Five roles, each limited to the bucket and its one service; no access keys in AWS; IMDSv2; no inbound rules on the Batch security group. An API key in Parameter Store protects the API; it is switched off for judging. |
+| Logs | Amazon CloudWatch Logs | `/aws/lambda/spatial-inspection-api`, `/aws/batch/spatial-inspection`, CodeBuild logs. |
+| Infrastructure | AWS CloudFormation | A build stack (bucket, ECR, CodeBuild) and an app stack (Batch, Lambda, API Gateway, CloudFront, IAM), created by one deploy script that also syncs `web/` and invalidates CloudFront; a destroy script removes both. |
 
 Measured on the live deployment for a 16 s synthetic-room video in Lite mode: the upload reached S3 in 6 s, the job
 waited 6 min 25 s for AWS Batch to start a GPU instance (cold start, NVIDIA A10G), the pipeline took 13 min 46 s, and
 the 95 result files reached S3 in 1 s, about 20 minutes end to end. `GET /api/v1/health` reports OpenCV 5.0.0, the
 GPU backend, S3 and the queue. Earlier runs on an NVIDIA T4 failed in the 3D engine; they show as failed in the app
-with their log and a re-run button.
+with their log and a re-run button. When idle only S3 and CloudFront cost anything (a few USD a month); a
+walkthrough costs the Spot GPU minutes plus requests and transfer.
 
-`deploy/aws/` keeps a single-instance alternative: `deploy.sh` creates a bucket, a role limited to that bucket and
-Bedrock, a security group and an EC2 instance, and `bootstrap.sh` installs the pinned dependencies, downloads the
-models with SHA-256 checks and starts the service (the OpenCV-only path on Graviton, or the GPU engine on a G5 / G6
-instance with the CUDA build of PyTorch).
+`deploy/aws/` in this repository keeps the earlier single-instance deployment: `deploy.sh` creates a bucket, a role
+limited to that bucket and Bedrock, a security group and an EC2 instance, and `bootstrap.sh` installs the pinned
+dependencies, downloads the models with SHA-256 checks and starts the service.
 
 ## 7. Evaluation
 

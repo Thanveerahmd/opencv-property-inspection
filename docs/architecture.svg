@@ -1,153 +1,258 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900" font-family="Segoe UI, Roboto, Arial, sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1110" font-family="Segoe UI, Roboto, Arial, sans-serif">
   <defs>
-    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#46524c"/></marker>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#334155"/></marker>
+    <marker id="o" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#c2410c"/></marker>
     <style>
-      .t{font-size:14.5px;fill:#1b1d1a;font-weight:700}.s{font-size:12px;fill:#4a5149}.h{font-size:12.5px;font-weight:700;letter-spacing:.08em}
-      .eng{fill:#e8eefb;stroke:#2f5fb3;stroke-width:1.5}.cv{fill:#e6f2ef;stroke:#1f6f63;stroke-width:1.5}.vw{fill:#fdf1f4;stroke:#b0436a;stroke-width:1.5}
-      .aws{fill:#fff4e5;stroke:#d9821e;stroke-width:1.5}.ag{fill:#efeefb;stroke:#5458c2;stroke-width:1.5}
-      .pl{fill:#f4f5f2;stroke:#bfc3b8;stroke-width:1.2}.l{stroke:#46524c;stroke-width:1.6;fill:none}
+      .title { font-size: 28px; font-weight: 700; fill: #0f172a }
+      .sub { font-size: 15px; fill: #475569 }
+      .grp { font-size: 13.5px; font-weight: 700; letter-spacing: .1em }
+      .h { font-size: 16.5px; font-weight: 700; fill: #0f172a }
+      .d { font-size: 13.2px; fill: #334155 }
+      .m { font-family: Consolas, monospace; font-size: 12.6px; fill: #0f172a }
+      .n { font-size: 12.5px; font-weight: 700; fill: #fff }
+      .lbl { font-size: 12.5px; fill: #334155 }
+      .aws { fill: #fff7ed; stroke: #f59e0b; stroke-width: 1.4 }
+      .box { fill: #ffffff; stroke: #94a3b8; stroke-width: 1.2 }
+      .cv { fill: #ecfdf5; stroke: #10b981; stroke-width: 1.3 }
+      .eng { fill: #eff6ff; stroke: #3b82f6; stroke-width: 1.3 }
+      .ag { fill: #f5f3ff; stroke: #8b5cf6; stroke-width: 1.3 }
+      .vw { fill: #fdf2f8; stroke: #ec4899; stroke-width: 1.3 }
+      .act { fill: #f8fafc; stroke: #64748b; stroke-width: 1.2 }
+      .ln { stroke: #334155; stroke-width: 1.8; fill: none }
+      .up { stroke: #c2410c; stroke-width: 2; fill: none }
+      .dsh { stroke: #334155; stroke-width: 1.6; fill: none; stroke-dasharray: 6 5 }
     </style>
   </defs>
-  <rect width="1400" height="900" fill="#ffffff"/>
-  <text x="40" y="44" font-size="24" font-weight="700" fill="#1b1d1a">Spatially Aware Property Inspection: architecture</text>
-  <text x="40" y="68" class="s">Blue: hybrid visual SLAM + 3D reconstruction (Depth Anything 3 + OpenCV 5) · Teal: OpenCV 5 analysis · Pink: viewer and report · Purple: agent · Orange: AWS</text>
+  <rect width="1600" height="1110" fill="#ffffff"/>
+  <text x="30" y="44" class="title">Spatially Aware Property Inspection: AWS architecture (live, serverless)</text>
+  <text x="30" y="70" class="sub">Deployed by one script as two CloudFormation stacks (build + app) · region us-east-2 · https://d3ppa06ysdffln.cloudfront.net · scales to zero: when idle only S3 and CloudFront remain</text>
 
-  <!-- AWS boundary -->
-  <rect x="250" y="92" width="1125" height="790" rx="16" fill="none" stroke="#d9821e" stroke-width="2" stroke-dasharray="7 5"/>
-  <text x="270" y="118" class="h" fill="#d9821e">AWS CLOUD · LIVE: CLOUDFRONT + S3 (WEB) · API GATEWAY + LAMBDA (API) · SAME CODE RUNS LOCALLY</text>
+  <!-- actors -->
+  <rect x="20" y="130" width="210" height="130" rx="12" class="act"/>
+  <text x="34" y="156" class="h">Person filming</text>
+  <text x="34" y="180" class="d">owner, tenant or field agent;</text>
+  <text x="34" y="198" class="d">phone browser: uploads the</text>
+  <text x="34" y="216" class="d">walkthrough video, gets the</text>
+  <text x="34" y="234" class="d">agent's re-film instructions</text>
+  <rect x="20" y="300" width="210" height="150" rx="12" class="act"/>
+  <text x="34" y="326" class="h">Inspector · underwriter</text>
+  <text x="34" y="344" class="h">· judge</text>
+  <text x="34" y="368" class="d">browser: dashboard, 3D viewer,</text>
+  <text x="34" y="386" class="d">findings, coverage coach, agent</text>
+  <text x="34" y="404" class="d">trace; approves or overrides;</text>
+  <text x="34" y="422" class="d">exports the report</text>
 
-  <!-- people -->
-  <rect x="30" y="170" width="195" height="104" rx="12" class="pl"/>
-  <text x="45" y="197" class="t">Person filming</text>
-  <text x="45" y="219" class="s">Phone walkthrough video</text>
-  <text x="45" y="237" class="s">of a room; gets re-film</text>
-  <text x="45" y="255" class="s">instructions back</text>
-  <rect x="30" y="620" width="195" height="122" rx="12" class="pl"/>
-  <text x="45" y="647" class="t">Inspector</text>
-  <text x="45" y="669" class="s">Walks the 3D model, reviews</text>
-  <text x="45" y="687" class="s">each finding, reads the agent</text>
-  <text x="45" y="705" class="s">trace, approves or overrides</text>
-  <text x="45" y="723" class="s">the decision</text>
+  <!-- AWS cloud -->
+  <rect x="250" y="92" width="1335" height="680" rx="16" fill="none" stroke="#f59e0b" stroke-width="1.6" stroke-dasharray="8 6"/>
+  <text x="266" y="766" class="grp" fill="#c2410c">AWS CLOUD · us-east-2</text>
 
-  <!-- EC2 -->
-  <rect x="268" y="132" width="1090" height="440" rx="14" fill="none" stroke="#d9821e" stroke-width="1.5"/>
-  <text x="285" y="155" class="h" fill="#d9821e">AWS BATCH · GPU JOB (NVIDIA, SPOT, SCALES TO ZERO) · one walkthrough at a time</text>
+  <!-- CloudFront -->
+  <rect x="270" y="130" width="300" height="190" rx="12" class="aws"/>
+  <text x="286" y="156" class="h">Amazon CloudFront</text>
+  <text x="286" y="176" class="d">Origin Access Control to the private bucket</text>
+  <text x="286" y="198" class="d">CloudFront Function routes:</text>
+  <text x="292" y="218" class="m">/  → web/index.html</text>
+  <text x="292" y="236" class="m">/static/*  → web/*</text>
+  <text x="292" y="254" class="m">/walkthroughs/&lt;name&gt;/ → viewer</text>
+  <text x="292" y="272" class="m">  + results/&lt;name&gt;/ files</text>
+  <text x="292" y="290" class="m">/api/*, /docs → API Gateway</text>
+  <text x="286" y="310" class="d">JSON served with no-store</text>
 
-  <!-- row A: engine -->
-  <text x="285" y="182" class="h" fill="#2f5fb3">3D ENGINE · engine3d/ · HYBRID VISUAL SLAM + 3D RECONSTRUCTION</text>
-  <rect x="285" y="192" width="205" height="98" rx="10" class="eng"/>
-  <text x="297" y="214" class="t">1 · Depth Anything 3</text>
-  <text x="297" y="234" class="s">DA3-BASE on the GPU: depth,</text>
-  <text x="297" y="250" class="s">pose, intrinsics per frame;</text>
-  <text x="297" y="266" class="s">chunks stitched by Sim(3)</text>
-  <rect x="500" y="192" width="205" height="98" rx="10" class="eng"/>
-  <text x="512" y="214" class="t">2 · OpenCV 5 tracking</text>
-  <text x="512" y="234" class="s">LK optical flow, SIFT / ORB,</text>
-  <text x="512" y="250" class="s">MAGSAC essential matrix,</text>
-  <text x="512" y="266" class="s">recoverPose per frame pair</text>
-  <rect x="715" y="192" width="205" height="98" rx="10" class="eng"/>
-  <text x="727" y="214" class="t">3 · Pose refinement</text>
-  <text x="727" y="234" class="s">verified pairs correct the</text>
-  <text x="727" y="250" class="s">trajectory; triangulated</text>
-  <text x="727" y="266" class="s">landmarks, loop candidates</text>
-  <rect x="930" y="192" width="205" height="98" rx="10" class="eng"/>
-  <text x="942" y="214" class="t">4 · Dense fusion</text>
-  <text x="942" y="234" class="s">depth filtering, joint-bilateral</text>
-  <text x="942" y="250" class="s">upsampling, point-to-plane ICP,</text>
-  <text x="942" y="266" class="s">1.5 cm TSDF, free-space carving</text>
-  <rect x="1145" y="192" width="200" height="98" rx="10" class="eng"/>
-  <text x="1157" y="214" class="t">5 · Clean room</text>
-  <text x="1157" y="234" class="s">floor RANSAC, Manhattan</text>
-  <text x="1157" y="250" class="s">planes, textured walls; objects</text>
-  <text x="1157" y="266" class="s">named by Grounding DINO</text>
-  <path class="l" d="M490 241H500M705 241H715M920 241H930M1135 241H1145" marker-end="url(#a)"/>
+  <!-- API -->
+  <rect x="270" y="350" width="300" height="250" rx="12" class="aws"/>
+  <text x="286" y="376" class="h">API Gateway (HTTP API)</text>
+  <text x="286" y="396" class="h">+ AWS Lambda</text>
+  <text x="286" y="418" class="d">FastAPI via Mangum, container image,</text>
+  <text x="286" y="436" class="d">1.5 GB, 60 s; same routes as server.py</text>
+  <text x="292" y="458" class="m">POST upload-url → presigned PUT</text>
+  <text x="292" y="476" class="m">POST start → Batch SubmitJob</text>
+  <text x="292" y="494" class="m">GET  log, status, list, portfolio</text>
+  <text x="292" y="512" class="m">POST ask, approve, findings review</text>
+  <text x="292" y="530" class="m">GET  report (HTML / MD / JSON)</text>
+  <text x="286" y="554" class="d">reads / writes the walkthrough's JSON</text>
+  <text x="286" y="572" class="d">in S3 (mirrored to /tmp for handlers)</text>
+  <text x="286" y="590" class="d">uploads bypass it (10 MB gateway limit)</text>
 
-  <!-- row B: analysis -->
-  <text x="285" y="318" class="h" fill="#1f6f63">OPENCV 5 ANALYSIS · on the engine's cameras, depth and room planes</text>
-  <rect x="285" y="328" width="205" height="98" rx="10" class="cv"/>
-  <text x="297" y="350" class="t">6 · Quality + privacy</text>
-  <text x="297" y="370" class="s">Laplacian, CLAHE; YuNet faces</text>
-  <text x="297" y="386" class="s">and DB text blurred before</text>
-  <text x="297" y="402" class="s">anything is analysed</text>
-  <rect x="500" y="328" width="205" height="98" rx="10" class="cv"/>
-  <text x="512" y="350" class="t">7 · Evidence integrity</text>
-  <text x="512" y="370" class="s">img_hash PHash reuse, hard</text>
-  <text x="512" y="386" class="s">cuts, frozen / looped frames,</text>
-  <text x="512" y="402" class="s">dft moiré + bezel: screen</text>
-  <rect x="715" y="328" width="205" height="98" rx="10" class="cv"/>
-  <text x="727" y="350" class="t">8 · Coverage</text>
-  <text x="727" y="370" class="s">10 cm samples vs every frame,</text>
-  <text x="727" y="386" class="s">occlusion, 3 m / 70° / sharp;</text>
-  <text x="727" y="402" class="s">keyframes by set cover</text>
-  <rect x="930" y="328" width="205" height="98" rx="10" class="cv"/>
-  <text x="942" y="350" class="t">9 · Defects</text>
-  <text x="942" y="370" class="s">ridge filter, thinning, Lab</text>
-  <text x="942" y="386" class="s">colour, morphology, contours;</text>
-  <text x="942" y="402" class="s">size in metres from depth</text>
-  <rect x="1145" y="328" width="200" height="98" rx="10" class="cv"/>
-  <text x="1157" y="350" class="t">10 · Defect or object?</text>
-  <text x="1157" y="370" class="s">ray cast onto room planes vs</text>
-  <text x="1157" y="386" class="s">depth; Grounding DINO boxes;</text>
-  <text x="1157" y="402" class="s">MobileNetV2 via cv2.dnn</text>
-  <path class="l" d="M490 377H500M705 377H715M920 377H930M1135 377H1145" marker-end="url(#a)"/>
-  <path class="l" d="M1245 290V300H387V328" marker-end="url(#a)"/>
+  <!-- S3 -->
+  <rect x="610" y="130" width="290" height="370" rx="12" class="aws"/>
+  <text x="626" y="156" class="h">Amazon S3 (one private bucket)</text>
+  <text x="626" y="176" class="d">block public access, CORS for the PUT</text>
+  <text x="626" y="204" class="m">web/</text>
+  <text x="680" y="204" class="d">console + 3D viewer</text>
+  <text x="626" y="228" class="m">uploads/&lt;name&gt;/</text>
+  <text x="626" y="246" class="d">  the video (presigned PUT, 1 h)</text>
+  <text x="626" y="270" class="m">results/&lt;name&gt;/</text>
+  <text x="634" y="290" class="d">status.json, run.log (live, every 5 s)</text>
+  <text x="634" y="308" class="d">walkthrough.json, summary.json</text>
+  <text x="634" y="326" class="d">GLB models, room.splat, videos</text>
+  <text x="634" y="344" class="d">findings, crops, coverage maps</text>
+  <text x="634" y="362" class="d">agent.json (the agent trace)</text>
+  <text x="634" y="380" class="d">report.html / .md / .json</text>
+  <text x="626" y="404" class="m">deploy/</text>
+  <text x="690" y="404" class="d">source.zip for CodeBuild</text>
+  <text x="626" y="432" class="d">lifecycle: stale multipart uploads</text>
+  <text x="626" y="450" class="d">aborted, deploy/ expires in 30 days</text>
+  <text x="626" y="478" class="d">≈ 95 result files per walkthrough</text>
 
-  <!-- row C: viewer -->
-  <text x="285" y="454" class="h" fill="#b0436a">VIEWER AND REPORT · walkthrough.py + web/</text>
-  <rect x="285" y="464" width="260" height="92" rx="10" class="vw"/>
-  <text x="297" y="486" class="t">11 · 3D walkthrough viewer</text>
-  <text x="297" y="506" class="s">textured room GLB, numbered finding</text>
-  <text x="297" y="522" class="s">pins, walk inside along the camera</text>
-  <text x="297" y="538" class="s">path, coverage-gap patches</text>
-  <rect x="555" y="464" width="255" height="92" rx="10" class="vw"/>
-  <text x="567" y="486" class="t">12 · Live map + coach</text>
-  <text x="567" y="506" class="s">video beside the 2D map as coverage</text>
-  <text x="567" y="522" class="s">grows; floor plan; where to film</text>
-  <text x="567" y="538" class="s">next to reach the target</text>
-  <rect x="820" y="464" width="255" height="92" rx="10" class="vw"/>
-  <text x="832" y="486" class="t">13 · Grade, risk, decision</text>
-  <text x="832" y="506" class="s">rules: grade A–E, perils, repair</text>
-  <text x="832" y="522" class="s">cost, valuation, underwriting;</text>
-  <text x="832" y="538" class="s">REFER below 60% inspected</text>
-  <rect x="1085" y="464" width="260" height="92" rx="10" class="vw"/>
-  <text x="1097" y="486" class="t">14 · Dashboard + report</text>
-  <text x="1097" y="506" class="s">all inspections, review buttons,</text>
-  <text x="1097" y="522" class="s">human approval; HTML (PDF),</text>
-  <text x="1097" y="538" class="s">Markdown and JSON export</text>
+  <!-- support services -->
+  <rect x="610" y="520" width="290" height="80" rx="12" class="aws"/>
+  <text x="626" y="546" class="h">AWS Systems Manager</text>
+  <text x="626" y="566" class="d">Parameter Store: the API key (X-API-Key)</text>
+  <text x="626" y="584" class="d">off for judging: anyone with the link</text>
 
-  <!-- agent -->
-  <rect x="268" y="598" width="800" height="186" rx="14" class="ag"/>
-  <text x="285" y="622" class="h" fill="#5458c2">INSPECTION AGENT · perception → decision → action</text>
-  <text x="285" y="648" class="s">Tools (each runs OpenCV 5 on the walkthrough): coverage_report · check_integrity · list_candidates · look_at</text>
-  <text x="285" y="666" class="s">find_better_view (projects the 3D finding into every frame, picks the closest square-on sharp view, re-detects)</text>
-  <text x="285" y="684" class="s">measure · read_label · flag_for_review / dismiss · request_refilm · assess_risk · request_human_approval</text>
-  <text x="285" y="712" class="s">What OpenCV measures changes the next step: low coverage → REFER + re-film instructions; unclear crop → another</text>
-  <text x="285" y="730" class="s">view; re-detection and Grounding DINO → flag or dismiss; nothing is confirmed without a person.</text>
-  <text x="285" y="758" class="s">A rule-based policy runs the same tools when Bedrock is unreachable, so the loop never stalls.</text>
+  <rect x="270" y="620" width="300" height="132" rx="12" class="aws"/>
+  <text x="286" y="646" class="h">AWS IAM</text>
+  <text x="286" y="666" class="d">Lambda role, Batch job role, execution</text>
+  <text x="286" y="684" class="d">role, ECS instance role, CodeBuild role,</text>
+  <text x="286" y="702" class="d">each limited to the bucket and the one</text>
+  <text x="286" y="720" class="d">service it needs; no access keys in AWS;</text>
+  <text x="286" y="738" class="d">IMDSv2; Batch SG has no inbound rules</text>
 
-  <!-- AWS services -->
-  <rect x="1088" y="598" width="270" height="78" rx="12" class="aws"/>
-  <text x="1100" y="622" class="t">Amazon Bedrock</text>
-  <text x="1100" y="642" class="s">Claude, Converse API with tool</text>
-  <text x="1100" y="658" class="s">use: picks the next OpenCV tool</text>
-  <rect x="1088" y="690" width="270" height="78" rx="12" class="aws"/>
-  <text x="1100" y="714" class="t">Amazon S3</text>
-  <text x="1100" y="734" class="s">presigned video upload, 3D models,</text>
-  <text x="1100" y="750" class="s">results and agent traces</text>
-  <rect x="1088" y="782" width="270" height="80" rx="12" class="aws"/>
-  <text x="1100" y="806" class="t">IAM</text>
-  <text x="1100" y="826" class="s">job role limited to the bucket</text>
-  <text x="1100" y="842" class="s">and Bedrock; no keys in the code</text>
-  <path class="l" d="M1068 637H1088" marker-end="url(#a)" marker-start="url(#a)"/>
-  <path class="l" d="M680 572V598" marker-end="url(#a)"/>
-  <path class="l" d="M1215 572V598" marker-end="url(#a)"/>
+  <rect x="610" y="620" width="290" height="132" rx="12" class="aws"/>
+  <text x="626" y="646" class="h">Amazon CloudWatch Logs</text>
+  <text x="626" y="668" class="m">/aws/lambda/spatial-inspection-api</text>
+  <text x="626" y="686" class="m">/aws/batch/spatial-inspection</text>
+  <text x="626" y="704" class="d">CodeBuild logs; the job also streams</text>
+  <text x="626" y="722" class="d">status.json, run.log and engine.log</text>
+  <text x="626" y="740" class="d">tails to S3 for the live progress card</text>
 
-  <!-- people arrows -->
-  <path class="l" d="M225 222H268" marker-end="url(#a)"/>
-  <text x="229" y="212" class="s">video</text>
-  <path class="l" d="M268 700H225" marker-end="url(#a)"/>
-  <path class="l" d="M225 742C250 742 250 810 268 810H560V784" marker-end="url(#a)"/>
-  <text x="290" y="826" class="s">approve / override, confirm / dismiss findings</text>
-  <path class="l" d="M268 660C240 660 240 300 225 290" marker-end="url(#a)"/>
-  <text x="128" y="460" class="s" transform="rotate(-90 128 460)">re-film instructions</text>
+  <!-- Batch -->
+  <rect x="940" y="130" width="630" height="520" rx="14" fill="#fffbeb" stroke="#f59e0b" stroke-width="1.6"/>
+  <text x="956" y="154" class="grp" fill="#c2410c">AWS BATCH · ONE GPU MACHINE ONLY WHILE A WALKTHROUGH RUNS</text>
+  <rect x="956" y="168" width="200" height="96" rx="10" class="box"/>
+  <text x="970" y="192" class="h">Job queue</text>
+  <text x="970" y="212" class="d">one walkthrough at a time;</text>
+  <text x="970" y="230" class="d">job: 1 GPU, 4 vCPU, 14.5 GB,</text>
+  <text x="970" y="248" class="d">4 h timeout</text>
+  <rect x="956" y="276" width="200" height="200" rx="10" class="box"/>
+  <text x="970" y="300" class="h">Compute environments</text>
+  <text x="970" y="322" class="d">managed EC2, 0 → 1 instance</text>
+  <text x="970" y="342" class="d">Spot (price-capacity optimised)</text>
+  <text x="970" y="360" class="d">+ on-demand fallback</text>
+  <text x="970" y="382" class="m">g4dn.xlarge  NVIDIA T4</text>
+  <text x="970" y="400" class="m">g5.xlarge    NVIDIA A10G</text>
+  <text x="970" y="418" class="m">g6.xlarge    NVIDIA L4</text>
+  <text x="970" y="440" class="d">ECS GPU AMI, 120 GB gp3;</text>
+  <text x="970" y="458" class="d">back to 0 after the last job</text>
+  <rect x="956" y="488" width="200" height="146" rx="10" class="box"/>
+  <text x="970" y="512" class="h">Container image</text>
+  <text x="970" y="532" class="d">from ECR (≈ 15 GB): CUDA</text>
+  <text x="970" y="550" class="d">12.4, Python 3.11, torch 2.5.1,</text>
+  <text x="970" y="568" class="d">gsplat; model weights baked in</text>
+  <text x="970" y="586" class="d">(DA3, Grounding DINO, OpenCV</text>
+  <text x="970" y="604" class="d">Zoo): no downloads at run time</text>
+
+  <!-- GPU job pipeline -->
+  <rect x="1172" y="168" width="384" height="466" rx="12" fill="#ffffff" stroke="#f59e0b" stroke-width="1.4"/>
+  <text x="1188" y="192" class="h">GPU job: cloud/job.py → server.process</text>
+  <text x="1188" y="210" class="d">download video · run · sync status every 5 s · upload</text>
+  <rect x="1186" y="222" width="356" height="98" rx="8" class="eng"/>
+  <text x="1198" y="242" class="h">1 · 3D engine: hybrid visual SLAM</text>
+  <text x="1198" y="260" class="d">Depth Anything 3 depth, pose, intrinsics; OpenCV 5</text>
+  <text x="1198" y="277" class="d">LK flow, SIFT/ORB, MAGSAC findEssentialMat,</text>
+  <text x="1198" y="294" class="d">recoverPose, triangulatePoints, loops; ICP, 1.5 cm</text>
+  <text x="1198" y="311" class="d">TSDF, Manhattan room, textured clean model</text>
+  <rect x="1186" y="328" width="356" height="44" rx="8" class="eng"/>
+  <text x="1198" y="347" class="h">2 · Gaussian splats (gsplat)</text>
+  <text x="1198" y="364" class="d">photoreal room.splat, ~2.5 min on the GPU</text>
+  <rect x="1186" y="380" width="356" height="98" rx="8" class="cv"/>
+  <text x="1198" y="400" class="h">3 · OpenCV 5 analysis</text>
+  <text x="1198" y="418" class="d">quality + privacy (YuNet faces, DB text blurred);</text>
+  <text x="1198" y="435" class="d">integrity (img_hash, cuts, loops, dft moiré);</text>
+  <text x="1198" y="452" class="d">coverage per 10 cm; defect detectors; Grounding</text>
+  <text x="1198" y="469" class="d">DINO + MobileNetV2 (cv2.dnn) veto objects</text>
+  <rect x="1186" y="486" width="356" height="80" rx="8" class="ag"/>
+  <text x="1198" y="506" class="h">4 · Inspection agent</text>
+  <text x="1198" y="524" class="d">OpenCV tools: coverage, integrity, look_at,</text>
+  <text x="1198" y="541" class="d">find_better_view, re-film, assess_risk → proposal;</text>
+  <text x="1198" y="558" class="d">Bedrock Converse, or the rule-based policy</text>
+  <rect x="1186" y="574" width="356" height="48" rx="8" class="vw"/>
+  <text x="1198" y="594" class="h">5 · Viewer build</text>
+  <text x="1198" y="612" class="d">walkthrough.json, GLBs, live map, coach, report</text>
+
+  <!-- Bedrock -->
+  <rect x="940" y="670" width="300" height="82" rx="12" class="aws"/>
+  <text x="956" y="696" class="h">Amazon Bedrock</text>
+  <text x="956" y="716" class="d">Converse with tool use and images, called</text>
+  <text x="956" y="734" class="d">from the job (none configured live → policy)</text>
+  <rect x="1260" y="670" width="310" height="82" rx="12" class="aws"/>
+  <text x="1276" y="696" class="h">Amazon ECR</text>
+  <text x="1276" y="716" class="m">spatial-inspection/gpu  (≈ 15 GB)</text>
+  <text x="1276" y="734" class="m">spatial-inspection/api  (≈ 1 GB)</text>
+
+  <!-- request flow arrows -->
+  <path d="M230 195 H270" class="ln" marker-end="url(#a)"/>
+  <circle cx="250" cy="185" r="9" fill="#0f172a"/><text x="246" y="189.5" class="n">1</text>
+  <path d="M230 375 H250 V280 H270" class="ln" marker-end="url(#a)"/>
+  <path d="M420 320 V350" class="ln" marker-end="url(#a)"/>
+  <text x="428" y="340" class="lbl">/api/*</text>
+  <path d="M570 220 H610" class="ln" marker-end="url(#a)"/>
+  <text x="572" y="212" class="lbl">OAC</text>
+  <path d="M570 470 H610" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+  <text x="574" y="462" class="lbl">JSON</text>
+  <circle cx="590" cy="485" r="9" fill="#0f172a"/><text x="586" y="489.5" class="n">2</text>
+  <!-- presigned upload bypasses CloudFront -->
+  <path d="M125 130 V112 H760 V130" class="up" marker-end="url(#o)"/>
+  <circle cx="440" cy="112" r="9" fill="#c2410c"/><text x="436" y="116.5" class="n">3</text>
+  <text x="456" y="107" class="lbl" fill="#c2410c">video PUT straight to S3 with the presigned URL (bypasses the API)</text>
+  <!-- start: Lambda to Batch -->
+  <path d="M570 545 H590 V610 H925 V216 H956" class="ln" marker-end="url(#a)"/>
+  <circle cx="925" cy="400" r="9" fill="#0f172a"/><text x="921" y="404.5" class="n">4</text>
+  <path d="M1156 216 H1172" class="ln" marker-end="url(#a)"/>
+  <!-- job to and from S3 -->
+  <path d="M1530 168 V120 H860 V130" class="ln" marker-start="url(#a)" marker-end="url(#a)"/>
+  <circle cx="1110" cy="120" r="9" fill="#0f172a"/><text x="1106" y="124.5" class="n">5</text>
+  <text x="1128" y="115" class="lbl">video in, status every 5 s, results out</text>
+  <!-- job to Bedrock -->
+  <path d="M1186 526 H1166 V640 H1090 V670" class="dsh" marker-end="url(#a)"/>
+  <!-- ECR pull -->
+  <path d="M1415 670 V634" class="dsh" marker-end="url(#a)"/>
+  <text x="1422" y="658" class="lbl">image pull</text>
+  <!-- logs -->
+  <path d="M940 640 H918 V690 H900" class="dsh" marker-end="url(#a)"/>
+  <text x="904" y="660" class="lbl"></text>
+
+  <!-- build pipeline -->
+  <rect x="20" y="790" width="1565" height="128" rx="14" fill="#f8fafc" stroke="#94a3b8"/>
+  <text x="36" y="814" class="grp" fill="#475569">BUILD AND DEPLOY · one deploy script, in this order (a destroy script removes everything)</text>
+  <g>
+    <rect x="36" y="828" width="230" height="74" rx="10" class="box"/>
+    <text x="48" y="850" class="h">CloudFormation</text>
+    <text x="48" y="868" class="d">build stack: bucket, ECR</text>
+    <text x="48" y="886" class="d">repositories, CodeBuild</text>
+    <rect x="296" y="828" width="230" height="74" rx="10" class="box"/>
+    <text x="308" y="850" class="h">Source zip → S3</text>
+    <text x="308" y="868" class="d">git ls-files of the repo,</text>
+    <text x="308" y="886" class="d">s3://…/deploy/source.zip</text>
+    <rect x="556" y="828" width="260" height="74" rx="10" class="box"/>
+    <text x="568" y="850" class="h">AWS CodeBuild (×2)</text>
+    <text x="568" y="868" class="d">privileged Docker builds of the GPU</text>
+    <text x="568" y="886" class="d">and API images, ECR layer cache</text>
+    <rect x="846" y="828" width="230" height="74" rx="10" class="box"/>
+    <text x="858" y="850" class="h">Amazon ECR</text>
+    <text x="858" y="868" class="d">image digests passed to</text>
+    <text x="858" y="886" class="d">the app stack</text>
+    <rect x="1106" y="828" width="250" height="74" rx="10" class="box"/>
+    <text x="1118" y="850" class="h">CloudFormation</text>
+    <text x="1118" y="868" class="d">app stack: Batch, Lambda, API</text>
+    <text x="1118" y="886" class="d">Gateway, CloudFront, IAM</text>
+    <rect x="1386" y="828" width="185" height="74" rx="10" class="box"/>
+    <text x="1398" y="850" class="h">Web sync</text>
+    <text x="1398" y="868" class="d">web/ → S3, CloudFront</text>
+    <text x="1398" y="886" class="d">invalidation, prints URL</text>
+    <path d="M266 865 H296" class="ln" marker-end="url(#a)"/>
+    <path d="M526 865 H556" class="ln" marker-end="url(#a)"/>
+    <path d="M816 865 H846" class="ln" marker-end="url(#a)"/>
+    <path d="M1076 865 H1106" class="ln" marker-end="url(#a)"/>
+    <path d="M1356 865 H1386" class="ln" marker-end="url(#a)"/>
+  </g>
+
+  <!-- flow legend and measurements -->
+  <text x="30" y="950" class="h">Request flow</text>
+  <text x="30" y="972" class="d"><tspan font-weight="700">1</tspan> The browser loads the console and viewer from S3 through CloudFront; API calls go through CloudFront to API Gateway and Lambda.</text>
+  <text x="30" y="992" class="d"><tspan font-weight="700">2</tspan> Lambda names the walkthrough, writes status.json = uploading and returns a presigned S3 PUT URL. <tspan font-weight="700">3</tspan> The browser uploads the video straight to S3 (up to 2 GB).</text>
+  <text x="30" y="1012" class="d"><tspan font-weight="700">4</tspan> "start": Lambda checks the object and submits the Batch job; Batch starts one Spot GPU instance (or on-demand) and pulls the image from ECR.</text>
+  <text x="30" y="1032" class="d"><tspan font-weight="700">5</tspan> The job downloads the video, runs the five stages, streams status and logs to S3 every 5 s, uploads results/&lt;name&gt;/ with status.json last; the instance then terminates.</text>
+  <text x="30" y="1052" class="d">The viewer reads the results through CloudFront; review, approval and ask go to Lambda, which updates the JSON in S3 and the agent trace.</text>
+  <text x="30" y="1082" class="d" fill="#c2410c">Measured live (16 s video, Lite): upload 6 s · wait for a GPU instance 6 min 25 s (cold start, NVIDIA A10G) · pipeline 13 min 46 s · 95 result files to S3 in 1 s.</text>
 </svg>

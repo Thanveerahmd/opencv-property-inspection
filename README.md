@@ -10,7 +10,7 @@ filmed again, and proposes a decision that a person approves.
 
 - Technical report: [docs/technical-report.md](docs/technical-report.md)
 - Live app (no login): <https://d3ppa06ysdffln.cloudfront.net>
-- Architecture: [docs/architecture.svg](docs/architecture.svg)
+- Architecture: [AWS deployment](docs/architecture.svg) and [pipeline inside the GPU job](docs/pipeline.svg)
 - Agent workflow (perception → decision → action): [docs/agent-workflow.svg](docs/agent-workflow.svg)
 - What it looks like: [See it in action](#see-it-in-action) (screenshots and clips of every scenario)
 
@@ -19,7 +19,9 @@ filmed again, and proposes a decision that a person approves.
 <p align="center"><sub>Left: the phone video. Right: the room's 3D Gaussian splats, rendered from the camera the 3D engine
   recovered for each frame.</sub></p>
 
-![Architecture](docs/architecture.svg)
+![AWS architecture](docs/architecture.svg)
+
+![Pipeline inside the GPU job](docs/pipeline.svg)
 
 ## See it in action
 
@@ -227,10 +229,12 @@ priority, so a laptop stays cool; the server sets both higher. With AWS credenti
 
 ## Deploy to AWS
 
-**Live:** <https://d3ppa06ysdffln.cloudfront.net>, serverless: CloudFront + S3 serve the web app, API Gateway + Lambda
-run the FastAPI API, the browser uploads the video to S3 with a presigned URL, and an AWS Batch GPU job (Spot, scales
-to zero) runs the whole pipeline per walkthrough and writes the results back to S3. Details and measured timings are
-in the [technical report, section 6](docs/technical-report.md#6-aws-deployment).
+**Live:** <https://d3ppa06ysdffln.cloudfront.net>, serverless (see the [AWS architecture](docs/architecture.svg)):
+CloudFront with a routing function serves the console, viewer and results from a private S3 bucket; API Gateway +
+Lambda run the FastAPI API; the browser uploads the video straight to S3 with a presigned URL; an AWS Batch GPU job
+(Spot, on-demand fallback, 0 to 1 instance) runs the whole pipeline and writes the results back to S3; images are built
+by CodeBuild into ECR; everything is two CloudFormation stacks. Details and measured timings are in the
+[technical report, section 6](docs/technical-report.md#6-aws-deployment).
 
 **Single instance** (the scripts in `deploy/aws/`):
 
