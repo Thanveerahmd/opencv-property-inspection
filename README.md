@@ -8,8 +8,129 @@ filmed again, and proposes a decision that a person approves.
 
 - Technical report: [docs/technical-report.md](docs/technical-report.md)
 - Architecture: [docs/architecture.svg](docs/architecture.svg)
+- What it looks like: [See it in action](#see-it-in-action) (screenshots and clips of every scenario)
+
+<p align="center"><img src="docs/media/photoreal-splats.gif" width="760"
+  alt="The phone video (left) and the room's Gaussian splats rendered from the same camera (right)"></p>
+<p align="center"><sub>Left: the phone video. Right: the room's 3D Gaussian splats, rendered from the camera the 3D engine
+  recovered for each frame.</sub></p>
 
 ![Architecture](docs/architecture.svg)
+
+## See it in action
+
+Everything below is the app running locally on a laptop (NVIDIA RTX 3080 Laptop GPU) on two real phone walkthroughs:
+`demo_property_lite` (19.6 s, two rooms) and `tom_home` (21.1 s, an open-plan living room with a staircase). No frame
+is staged: the screenshots come from the same results folders the evaluation in the technical report uses.
+
+### 1. Upload a walkthrough and watch it being scanned
+
+A person (an owner, tenant or field agent) uploads a phone video on the **Video walkthroughs** page, with the property
+it is for and a quality setting (Advanced: 1.5 cm model; Lite: faster). The video plays under a scanning beam while the
+server works through **20 steps in three parts**, ticked off live with the time left:
+
+- **3D engine** (11 steps): Depth Anything 3 depth and pose on the GPU, floor and metric scale, OpenCV 5 camera tracking,
+  depth filtering, ICP alignment and the TSDF mesh, gravity and Manhattan frame, room layout, furniture named by
+  Grounding DINO, texturing from the video, floor plan, 3D exports.
+- **Photoreal 3D**: Gaussian splats trained on the engine's cameras.
+- **OpenCV analysis** (6 steps): quality and evidence integrity, privacy blurring, OpenCV TSDF and room planes,
+  coverage and keyframes, defect candidates, labels and rectified walls; then the **agent** and the **viewer files**.
+
+Walkthroughs are processed one at a time; the dashboard follows whichever one is running.
+
+![Live scanning progress on the dashboard](docs/media/progress-dashboard.jpg)
+
+| Upload form and walkthrough list | |
+| --- | --- |
+| ![Video walkthroughs page](docs/media/walkthroughs.jpg) | Each finished walkthrough is a card with its coverage map, grade, decision, coverage, findings and rooms; it opens the 3D viewer. |
+
+### 2. Dashboard: every inspection at a glance
+
+Condition grades, risk levels, underwriting decisions, repair exposure and average inspected coverage across all
+walkthroughs, with the most recent ones as cards and a sortable table below. The sidebar shows the models in use (Depth
+Anything 3 on the GPU, OpenCV 5, the inspection agent) and the GPU's memory.
+
+![Dashboard](docs/media/dashboard.jpg)
+
+### 3. Walk through the room in 3D
+
+Each walkthrough opens in its own viewer: the decision, the approval state, and the key numbers (condition score,
+inspectable coverage, findings, floor area, repair cost) above a 3D model with numbered finding pins.
+
+![Walkthrough viewer](docs/media/viewer-tom.jpg)
+
+The 3D model has several views of the same room, all in metres and in the same frame as the findings:
+
+| Photoreal (Gaussian splats) | Photoreal walk inside |
+| --- | --- |
+| ![Photoreal](docs/media/photoreal.jpg) | ![Photoreal walk inside](docs/media/photoreal-walk.jpg) |
+| Orbit the room as it looks in the video. The splats score 28.4 dB PSNR on frames they never trained on (the textured mesh: 20.5 dB). The blue line is the path the phone took. | The browser camera follows the phone: play or scrub the small video and the 3D view moves with it, frame by frame. |
+
+| Walk inside the measured model | The clean model, orbiting |
+| --- | --- |
+| ![Walk inside](docs/media/walk-inside.jpg) | ![Clean model orbit](docs/media/clean-model-orbit.gif) |
+| The textured TSDF model from the video camera: what the measurements and coverage are computed on. | Walls, floor and ceiling as clean planes textured from the video, with the furniture separated from the structure. |
+
+Also in the tabs: **Coverage gaps** (red and amber patches that were not inspectable), the **SLAM model** (point layers
+and mesh), the **clean room model** and **furniture only**. Every model downloads as a GLB.
+
+### 4. How the 3D model is made
+
+| Depth Anything 3: depth for every frame | OpenCV 5 tracking: verified feature tracks and poses |
+| --- | --- |
+| ![Depth Anything 3](docs/media/depth-anything-3.gif) | ![OpenCV tracking](docs/media/opencv-tracking.gif) |
+
+| The video against the reconstructed model | What the engine measured for this walkthrough |
+| --- | --- |
+| ![Video vs model](docs/media/video-vs-model.gif) | ![3D engine and OpenCV pipeline panel](docs/media/engine-panel.jpg) |
+
+Depth Anything 3 gives depth and an initial pose; OpenCV 5 checks every frame pair (LK optical flow, SIFT + MAGSAC
+essential matrix), refines the trajectory and triangulates landmarks; point-to-plane ICP aligns each depth map before
+the TSDF mesh is fused. The viewer's engine panel lists the numbers for each walkthrough: pair checks, ICP residuals,
+reprojection error, wall flatness, photometric fit, objects and timings.
+
+### 5. Coverage: what was actually inspected
+
+Every 10 cm of wall, floor and ceiling is checked against every frame: **seen**, **inspectable** (within 3 m, at most
+70° off square-on, sharp, not hidden) and **inspected** (in an analysed keyframe). The live map replays the walk with
+coverage growing on the floor plan; the coverage coach shows, frame by frame, what is still to film and where to stand.
+
+| Live map: the video beside the floor plan as coverage grows | Coverage at the end of the walk |
+| --- | --- |
+| ![Live map](docs/media/live-map.gif) | ![Coverage map](docs/media/coverage-map.jpg) |
+
+![Coverage coach](docs/media/coach.jpg)
+
+### 6. Findings: defect or object?
+
+OpenCV finds candidates (cracks, stains and water damage, mould, rust, peeling paint), measures them in metres and
+places them on the wall, floor or ceiling where they are. Candidates that are furniture, doors, pictures or a room seen
+through a doorway are ruled out with the reason, by depth against the room planes, Grounding DINO and MobileNetV2. On
+`demo_property_lite`, 66 of 67 candidates were ruled out; the one left (the edge of a dark door at the frame border)
+waits for a person, who can **confirm** it with a severity, **dismiss** it, or **reopen** it later. The grade follows.
+
+| Findings and review | Property risk and valuation |
+| --- | --- |
+| ![Findings](docs/media/findings.jpg) | ![Risk and valuation](docs/media/risk.jpg) |
+
+### 7. The agent proposes, a person decides
+
+The inspection agent works through the evidence with OpenCV tools (coverage report, integrity check, look at a
+candidate, find a better view in other frames, measure, re-film requests, risk assessment) and proposes ACCEPT, REPAIR
+or REFER. Below 60% inspected the proposal must be REFER, with instructions for what to film again. Every step is in
+the trace; nothing is final until a person approves or overrides.
+
+| Human approval and re-film requests | Evidence integrity |
+| --- | --- |
+| ![Human approval](docs/media/approval.jpg) | ![Evidence integrity](docs/media/integrity.jpg) |
+
+![Agent trace](docs/media/agent-trace.jpg)
+
+| Ask the inspection agent | The exported report |
+| --- | --- |
+| ![Ask](docs/media/ask.jpg) | ![Report](docs/media/report.jpg) |
+
+The report exports as self-contained HTML (print to PDF), Markdown or JSON.
 
 ## How it works
 
@@ -36,7 +157,7 @@ video ─► 3D engine (engine3d/, GPU)       Depth Anything 3 depth + pose ─�
 | Clean room geometry | RANSAC floor, metric scale, Manhattan yaw, plane regularisation, walls / doors / openings / rooms | `engine3d/v1prod/layout.py`, `shell.py` |
 | Real-world texturing | walls, floor and ceiling textured from the video with exposure and vignetting compensation | `engine3d/v1prod/pipeline.py`, `render.py` |
 | Objects | furniture separated from the structure, named by multi-view voting of Grounding DINO boxes | `engine3d/v1prod/objects.py`, `labels.py`, `grounding.py` |
-| Photoreal 3D | 3D Gaussian splats (gsplat) started on the engine's surface and trained on its cameras, per-frame exposure, held-out frames for scoring; shown in the viewer with the finding pins and the camera path | `engine3d/train_splats.py`, `web/walkthrough.html` |
+| Photoreal 3D | 3D Gaussian splats (gsplat) started on the engine's surface and trained on its cameras, per-frame exposure, held-out frames for scoring; shown in the viewer with the finding pins and the camera path | `engine3d/train_splats.py`, `render_splats.py`, `web/walkthrough.html` |
 | Video and quality gate | `VideoCapture`, Laplacian sharpness, CLAHE | `video.py`, `pipeline.py` |
 | Privacy | `FaceDetectorYN` (YuNet) and DB text detection, blurred before analysis | `privacy.py` |
 | 3D fusion (OpenCV) | `cv2.Volume` hash TSDF on the engine's depth and poses, `fetchPointsNormals` | `fusion.py` |
