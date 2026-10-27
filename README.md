@@ -125,6 +125,9 @@ docs/                     technical report, architecture diagram, build plan
 
 ## Licences
 
+The code is MIT-licensed ([LICENSE](LICENSE)), © 2026 Team XCore. The vendored `depth_anything_3/` keeps its
+Apache-2.0 licence.
+
 Every model and library allows commercial use: OpenCV 5 (Apache-2.0), Depth Anything 3 BASE (code and weights,
 Apache-2.0, vendored in `depth_anything_3/`), Grounding DINO tiny (Apache-2.0), Open3D (MIT), YuNet (MIT), PP-OCRv3,
 CRNN and MobileNetV2 (Apache-2.0), Depth Anything V2 Small (Apache-2.0), gsplat (Apache-2.0) for training the

@@ -11,6 +11,8 @@ from spatial_inspection.enhance import clahe_lab, enhance_for_review, exposure_s
 
 DATA = Path(__file__).parent / "data"
 DEBUG = Path(__file__).parents[1] / "data" / "debug" / "defects"
+# the sample defect photos are not published with the code; the tests that need them skip without them
+photos = pytest.mark.skipif(not (DATA / "cracked_wall_1.jpg").exists(), reason="sample defect photos not present")
 
 # sample image -> the kind a reviewer would expect among the three best candidates
 SAMPLES = {
@@ -29,6 +31,7 @@ def plain_wall(h=480, w=848, colour=(196, 204, 210), noise=3.0, seed=0):
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
+@photos
 @pytest.mark.parametrize("name", sorted(SAMPLES))
 def test_sample_finds_expected_kind(name):
     img = cv2.imread(str(DATA / f"{name}.jpg"))
@@ -153,6 +156,7 @@ def test_measure_without_depth_gives_pixels_only():
     assert m["length_m"] is None and m["area_m2"] is None
 
 
+@photos
 def test_detect_all_handles_crops_and_odd_inputs():
     img = cv2.imread(str(DATA / "cracked_wall_1.jpg"))
     for crop in (img[1100:1500, 1150:1450], img[:30, :30], img[:5, :5], cv2.cvtColor(img[:300, :300], cv2.COLOR_BGR2GRAY)):
@@ -165,6 +169,7 @@ def test_detect_all_handles_crops_and_odd_inputs():
         detect_all(img[:100, :100], kinds=["dust"])
 
 
+@photos
 def test_crop_of_a_found_crack_confirms_it():
     img = cv2.imread(str(DATA / "cracked_wall_1.jpg"))
     best = next(c for c in detect_all(img) if c.kind == "crack")
@@ -190,6 +195,7 @@ def test_exposure_stats_counts_clipped_pixels():
     assert s["mean"] == pytest.approx(127.5)
 
 
+@photos
 def test_enhance_for_review_lifts_contrast_and_keeps_shape():
     img = cv2.imread(str(DATA / "cracked_wall_1.jpg"))[1200:1500, 1150:1450]
     flat = cv2.addWeighted(img, 0.4, np.full_like(img, 140), 0.6, 0)
