@@ -56,6 +56,16 @@ video ─► 3D engine (engine3d/, GPU)       Depth Anything 3 depth + pose ─�
 
 Python 3.11. Dependencies are pinned in `requirements.txt` and `requirements-dev.txt`.
 
+**One command on Windows** (NVIDIA GPU, [uv](https://docs.astral.sh/uv/) installed): builds `.venv` (and `.venv-splat`
+with `-Splats`), installs the models and checks the GPU. With a model bundle made by
+`python scripts/make_model_bundle.py` nothing has to be downloaded from Hugging Face:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup_windows.ps1 -Bundle C:\path\spatial-inspection-models.zip -Splats
+```
+
+By hand:
+
 ```bash
 uv venv --python 3.11
 uv pip install -r requirements.txt -r requirements-dev.txt
