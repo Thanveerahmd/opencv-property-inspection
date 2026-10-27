@@ -43,7 +43,9 @@ From one phone video of a room:
    other frames, re-detects, flags or dismisses, asks for parts of the room to be filmed again, grades the risk and
    proposes a decision (ACCEPT, REFER or REPAIR) that a person approves or overrides. Every finding can be confirmed,
    dismissed or reopened by the inspector, and the grade follows.
-6. **Viewer.** A 3D model of the room with numbered finding pins, a walk-inside mode that puts the browser camera
+6. **Photoreal room.** 3D Gaussian splats start on the engine's surface and are trained (gsplat) against the video
+   frames from the engine's cameras, so the room can be seen from any angle looking like the video, not like a mesh.
+7. **Viewer.** A 3D model of the room with numbered finding pins, a walk-inside mode that puts the browser camera
    where the phone was at each moment of the video, a live map video of coverage growing as the person walked, the
    floor plan, the agent's trace and a report.
 
@@ -139,8 +141,15 @@ and doctored footage, and (e) runtime. Defect recall cannot be measured on these
 | Walls: RMS of the measured surface about the fitted plane (median over walls) | 3.9 cm (5 walls) | 3.1 cm (14 walls) |
 | Textured clean model rendered from each video camera vs the frame: PSNR / SSIM (exposure-matched) | 18.1 dB / 0.80 | 20.5 dB / 0.84 |
 | Clean model vs measured mesh: share within 5 cm (completeness / accuracy) | 67% / 69% | 82% / 74% |
+| **Gaussian splats on held-out frames** (1 in 10, never trained on): PSNR / SSIM | **24.7 dB / 0.86** | **28.4 dB / 0.93** |
+| Splats: training time on the GPU, count, file | 2.5 min, 0.71 M, 21.7 MB | 2.4 min, 0.83 M, 25.5 MB |
 | Room model | main room 25.8 m² (4.7 × 6.05 m) + 1.6 m²; ceiling 2.67 m; 6 walls, 4 doors | 45.8 m² (8.2 × 8.4 m); ceiling 3.11 m; 14 walls, 4 doors, 4 openings |
 | Objects named by Grounding DINO | 10 of 15 (sofas, armchairs, mirror, TV, lamp, doors) | 15 of 31 (sofa, armchairs, table, staircase, shelf, mirror, fan, stool, picture frame, bucket, doors) |
+
+The splats are the realistic view of the room: on frames they never saw they score 6.6 dB (demo) and 7.9 dB
+(tom_home) above the textured mesh rendered from every frame, and their renders are hard to tell from the video
+except for thin, moving or reflective things (a fan, glossy floor). They depend on the engine: the Gaussians start on
+its TSDF surface and are optimised only for appearance from its fixed, OpenCV-refined camera poses.
 
 OpenCV's checks matter most where Depth Anything 3 is least sure: the refinement halves the trajectory jitter on
 both videos and moves the poses towards the epipolar geometry OpenCV measures; ICP then halves the depth
@@ -207,6 +216,7 @@ the video filmed off a laptop screen (moiré median 3.6).
 | --- | --- | --- |
 | 3D engine | 15.4 min (Depth Anything 3 reused) | 16.3 min |
 | OpenCV analysis | 61 s (privacy 21 s, defects with Grounding DINO 29 s, `cv2.Volume` fusion 7 s) | 80 s (32 s, 31 s, 11 s) |
+| Gaussian splats (7,000 steps, GPU) | 2.5 min | 2.4 min |
 | Viewer files (coverage, live map video, GLBs with pins) | 76 s | 116 s |
 
 The engine's CPU steps (ICP alignment, the 1.5 cm TSDF, texturing) take most of the time; the thread caps keep a
@@ -237,9 +247,10 @@ faster option.
   floor pattern, median wall colour) and marked as inferred; furniture backs and undersides are missing; 21 of 46
   objects stay unnamed.
 - **Integrity checks** were tested on synthetic manipulations and calibrated on two honest videos.
-- **Not in this build:** Gaussian splatting (no prebuilt Windows gsplat for this Python version; the Inria code is
-  non-commercial), and the Bedrock agent in these runs (the rule-based policy ran the same tools; AWS deployment is
-  pending).
+- **Splats are appearance, not measurement.** Findings, sizes and coverage come from the engine's mesh and depth;
+  the splats are for looking. They are blurred where the video was blurred or never looked, float a little near the
+  first and last cameras, and need their own environment (gsplat's Windows wheels exist for Python 3.10 only).
+- **Not in these runs:** the Bedrock agent (the rule-based policy ran the same tools; AWS deployment is pending).
 
 ## 9. Responsible use
 

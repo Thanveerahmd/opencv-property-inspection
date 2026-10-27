@@ -36,6 +36,7 @@ video ─► 3D engine (engine3d/, GPU)       Depth Anything 3 depth + pose ─�
 | Clean room geometry | RANSAC floor, metric scale, Manhattan yaw, plane regularisation, walls / doors / openings / rooms | `engine3d/v1prod/layout.py`, `shell.py` |
 | Real-world texturing | walls, floor and ceiling textured from the video with exposure and vignetting compensation | `engine3d/v1prod/pipeline.py`, `render.py` |
 | Objects | furniture separated from the structure, named by multi-view voting of Grounding DINO boxes | `engine3d/v1prod/objects.py`, `labels.py`, `grounding.py` |
+| Photoreal 3D | 3D Gaussian splats (gsplat) started on the engine's surface and trained on its cameras, per-frame exposure, held-out frames for scoring; shown in the viewer with the finding pins and the camera path | `engine3d/train_splats.py`, `web/walkthrough.html` |
 | Video and quality gate | `VideoCapture`, Laplacian sharpness, CLAHE | `video.py`, `pipeline.py` |
 | Privacy | `FaceDetectorYN` (YuNet) and DB text detection, blurred before analysis | `privacy.py` |
 | 3D fusion (OpenCV) | `cv2.Volume` hash TSDF on the engine's depth and poses, `fetchPointsNormals` | `fusion.py` |
@@ -47,7 +48,7 @@ video ─► 3D engine (engine3d/, GPU)       Depth Anything 3 depth + pose ─�
 | Labels | DB text detection + CRNN recognition on rating plates | `ocr.py` |
 | Grade, risk, cost, decision | condition grade A–E, risk level, insurance perils, repair cost, valuation, underwriting decision with reasons | `risk.py` |
 | Agent | Bedrock Converse with tool use; tools run the OpenCV stages above; rule-based policy without AWS | `agent.py` |
-| Viewer | 3D model with numbered finding pins, walk-inside mode on the camera path, live map video, coverage coach | `walkthrough.py`, `spatial/`, `web/walkthrough.html` |
+| Viewer | Photoreal (Gaussian splats) and textured 3D model with numbered finding pins, walk-inside mode on the camera path, live map video, coverage coach | `walkthrough.py`, `spatial/`, `web/walkthrough.html` |
 | Report | self-contained HTML (print to PDF), Markdown and JSON | `report.py` |
 | Web app | FastAPI: dashboard, upload with live progress, walkthrough viewer, finding review, agent trace, human approval | `server.py`, `web/` |
 
@@ -69,6 +70,10 @@ Inspect a video end to end (3D engine on the GPU, OpenCV analysis, agent, viewer
 python -m spatial_inspection.walkthrough --video walkthrough.mp4 --name walkthrough --property "12 Lake Rd"
 python -m spatial_inspection.agent results/walkthrough     # re-run the agent only
 ```
+
+Photoreal splats run in a second environment, because gsplat's prebuilt Windows wheels need Python 3.10 and
+PyTorch 2.4 (commands in `requirements-splat.txt`). When `.venv-splat` exists the build trains them after the 3D
+engine (about 2.5 min on a laptop RTX 3080); without it the walkthrough is built without the Photoreal mode.
 
 The model weights download on first use: Depth Anything 3 (`depth-anything/DA3-BASE`) and Grounding DINO
 (`IDEA-Research/grounding-dino-tiny`) from Hugging Face; the OpenCV Zoo models with
@@ -112,7 +117,8 @@ docs/                     technical report, architecture diagram, build plan
 
 Every model and library allows commercial use: OpenCV 5 (Apache-2.0), Depth Anything 3 BASE (code and weights,
 Apache-2.0, vendored in `depth_anything_3/`), Grounding DINO tiny (Apache-2.0), Open3D (MIT), YuNet (MIT), PP-OCRv3,
-CRNN and MobileNetV2 (Apache-2.0), Depth Anything V2 Small (Apache-2.0). No non-commercial weights (for example
+CRNN and MobileNetV2 (Apache-2.0), Depth Anything V2 Small (Apache-2.0), gsplat (Apache-2.0) for training the
+splats and GaussianSplats3D (MIT, from a CDN) for showing them. No non-commercial weights (for example
 LocateAnything-3B, DA3-GIANT or the Inria Gaussian Splatting code) are used. The 3D engine and the viewer come from
 Team XCore's Property Inspection Platform.
 
